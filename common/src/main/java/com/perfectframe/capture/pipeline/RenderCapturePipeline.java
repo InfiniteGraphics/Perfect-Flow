@@ -4,9 +4,8 @@ import com.perfectframe.capture.CaptureSession;
 import com.perfectframe.capture.frame.CapturedFrame;
 import com.perfectframe.capture.frame.PixelFormat;
 import com.perfectframe.config.PerfectFrameConfig;
-import com.perfectframe.shader.ShaderPipelineAdapter;
-import net.minecraft.client.Minecraft;
-import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.perfectframe.shader.CaptureAttachment;
+import com.perfectframe.shader.CaptureSource;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
@@ -17,48 +16,47 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class RenderCapturePipeline {
-    public List<CapturedFrame> capture(Minecraft minecraft, CaptureSession session, ShaderPipelineAdapter adapter) {
+    public List<CapturedFrame> capture(CaptureSession session, CaptureSource source) {
         PerfectFrameConfig config = session.config();
-        RenderTarget target = adapter.colorTarget(minecraft);
-        int width = target.width;
-        int height = target.height;
+        int width = source.width();
+        int height = source.height();
         session.setCaptureSize(width, height);
         List<CapturedFrame> frames = new ArrayList<>();
 
         if (config.capture.recordColor) {
             PixelFormat format = config.capture.recordAlpha ? PixelFormat.BGRA32 : PixelFormat.BGR24;
-            frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, format, readColor(target, width, height, format)));
+            frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, format, readColor(source.colorAttachment(), width, height, format)));
         }
 
         if (config.capture.recordAlpha) {
-            frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.BGRA32, readColor(target, width, height, PixelFormat.BGRA32)));
+            frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.BGRA32, readColor(source.colorAttachment(), width, height, PixelFormat.BGRA32)));
         }
 
-        if (config.capture.recordDepth && adapter.supportsDepthCapture(minecraft)) {
-            frames.add(new CapturedFrame("depth", session.capturedFrames(), width, height, PixelFormat.DEPTH_BGR24, readDepth(target, width, height)));
+        if (config.capture.recordDepth) {
+            frames.add(new CapturedFrame("depth", session.capturedFrames(), width, height, PixelFormat.DEPTH_BGR24, readDepth(source.depthAttachment(), width, height)));
         }
 
         return frames;
     }
 
-    private ByteBuffer readColor(RenderTarget target, int width, int height, PixelFormat format) {
+    private ByteBuffer readColor(CaptureAttachment attachment, int width, int height, PixelFormat format) {
         ByteBuffer pixels = BufferUtils.createByteBuffer(width * height * format.bytesPerPixel());
-        target.bindRead();
+        attachment.bindRead();
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
         int glFormat = format == PixelFormat.BGRA32 ? GL12.GL_BGRA : GL12.GL_BGR;
         GL11.glReadPixels(0, 0, width, height, glFormat, GL11.GL_UNSIGNED_BYTE, pixels);
-        target.unbindRead();
+        attachment.unbindRead();
         pixels.rewind();
         return pixels;
     }
 
-    private ByteBuffer readDepth(RenderTarget target, int width, int height) {
+    private ByteBuffer readDepth(CaptureAttachment attachment, int width, int height) {
         FloatBuffer depth = BufferUtils.createFloatBuffer(width * height);
         ByteBuffer pixels = BufferUtils.createByteBuffer(width * height * PixelFormat.DEPTH_BGR24.bytesPerPixel());
-        target.bindRead();
+        attachment.bindRead();
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
         GL11.glReadPixels(0, 0, width, height, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, depth);
-        target.unbindRead();
+        attachment.unbindRead();
         depth.rewind();
         while (depth.hasRemaining()) {
             float normalized = linearizeDepth(depth.get());

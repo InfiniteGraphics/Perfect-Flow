@@ -1,7 +1,6 @@
 package com.perfectframe.capture;
 
-import com.perfectframe.ui.RecordingHud;
-import net.minecraft.client.gui.GuiGraphics;
+import com.perfectframe.platform.Services;
 
 public final class CaptureClientHooks {
     private CaptureClientHooks() {
@@ -15,11 +14,11 @@ public final class CaptureClientHooks {
         CaptureController.INSTANCE.toggle();
     }
 
-    public static void afterWorldRender() {
+    public static void captureFinalFrame() {
         CaptureController.INSTANCE.captureRenderedFrame();
     }
 
-    public static void renderHud(GuiGraphics graphics) {
-        RecordingHud.render(graphics, CaptureController.INSTANCE);
+    public static void renderHud(Object graphicsContext) {
+        Services.PLATFORM.clientAccess().renderRecordingHud(graphicsContext);
     }
 }

@@ -1,7 +1,7 @@
 package com.perfectframe.shader;
 
 import com.perfectframe.config.PerfectFrameConfig;
-import net.minecraft.client.Minecraft;
+import com.perfectframe.platform.Services;
 
 import java.util.List;
 
@@ -13,13 +13,14 @@ public final class ShaderPipelineAdapters {
     private ShaderPipelineAdapters() {
     }
 
-    public static ShaderPipelineAdapter select(Minecraft minecraft, PerfectFrameConfig.ShaderCaptureMode mode) {
+    public static ShaderPipelineAdapter select(PerfectFrameConfig config) {
+        PerfectFrameConfig.ShaderCaptureMode mode = Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode);
         return switch (mode) {
             case VANILLA -> VANILLA;
-            case IRIS -> IRIS.isAvailable(minecraft) ? IRIS : VANILLA;
-            case OCULUS -> OCULUS.isAvailable(minecraft) ? OCULUS : VANILLA;
+            case IRIS -> IRIS;
+            case OCULUS -> OCULUS;
             case AUTO -> List.of(IRIS, OCULUS, VANILLA).stream()
-                    .filter(adapter -> adapter.isAvailable(minecraft))
+                    .filter(adapter -> adapter.isAvailable() && adapter.resolve().hasColor())
                     .findFirst()
                     .orElse(VANILLA);
         };

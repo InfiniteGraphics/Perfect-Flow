@@ -5,14 +5,11 @@ import com.perfectframe.capture.export.FfmpegPipeExporter;
 import com.perfectframe.capture.export.FrameExporter;
 import com.perfectframe.capture.export.TgaSequenceExporter;
 import com.perfectframe.capture.frame.CapturedFrame;
-import com.perfectframe.capture.frame.PixelFormat;
-import com.perfectframe.capture.pipeline.RenderCapturePipeline;
 import com.perfectframe.config.PerfectFrameConfig;
 import com.perfectframe.platform.Services;
+import com.perfectframe.shader.CaptureSource;
 import com.perfectframe.shader.ShaderPipelineAdapter;
 import com.perfectframe.shader.ShaderPipelineAdapters;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,12 +20,12 @@ import java.util.Map;
 public enum CaptureController {
     INSTANCE;
 
-    private final RenderCapturePipeline capturePipeline = new RenderCapturePipeline();
     private final Map<String, FrameExporter> exporters = new LinkedHashMap<>();
     private PerfectFrameConfig config = new PerfectFrameConfig();
     private CaptureState state = CaptureState.IDLE;
     private CaptureSession session;
     private ShaderPipelineAdapter shaderAdapter;
+    private CaptureSource captureSource;
     private boolean keyToggleQueued;
 
     public void configure(PerfectFrameConfig config) {
@@ -68,22 +65,26 @@ public enum CaptureController {
         }
         state = CaptureState.STARTING;
         try {
-            Minecraft minecraft = Minecraft.getInstance();
-            Path outputRoot = minecraft.gameDirectory.toPath().resolve(config.capture.outputPath);
+            Path outputRoot = Services.PLATFORM.clientAccess().gameDirectory().resolve(config.capture.outputPath);
             Files.createDirectories(outputRoot);
             session = new CaptureSession(config, outputRoot);
-            shaderAdapter = ShaderPipelineAdapters.select(minecraft, config.shader.captureMode);
-            if (config.capture.recordDepth && !shaderAdapter.supportsDepthCapture(minecraft)) {
-                notifyClient(Component.literal("Perfect Frame: depth capture disabled. " + shaderAdapter.unavailableDepthReason()));
+            shaderAdapter = ShaderPipelineAdapters.select(config);
+            captureSource = shaderAdapter.resolve();
+            validateCaptureSource(captureSource);
+            if (config.shader.captureMode == PerfectFrameConfig.ShaderCaptureMode.OCULUS
+                    && Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode) == PerfectFrameConfig.ShaderCaptureMode.IRIS) {
+                notifyClient("Perfect Frame: OCULUS mode maps to IRIS on Fabric 1.20.4.");
             }
             exporters.clear();
             state = CaptureState.RECORDING;
-            notifyClient(Component.literal("Perfect Frame recording started (" + shaderAdapter.id() + ")."));
+            Constants.LOG.info("Perfect Frame capture source: {}", captureSource.label());
+            notifyClient("Perfect Frame recording started (" + captureSource.label() + ").");
         } catch (Exception exception) {
             Constants.LOG.error("Failed to start capture", exception);
-            notifyClient(Component.literal("Perfect Frame failed to start: " + exception.getMessage()));
+            notifyClient("Perfect Frame failed to start: " + exception.getMessage());
             closeExporters();
             session = null;
+            captureSource = null;
             state = CaptureState.IDLE;
         }
     }
@@ -96,11 +97,12 @@ public enum CaptureController {
             return;
         }
         try {
-            Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.level == null || minecraft.player == null) {
+            if (!Services.PLATFORM.clientAccess().isWorldReady()) {
                 return;
             }
-            List<CapturedFrame> frames = capturePipeline.capture(minecraft, session, shaderAdapter);
+            captureSource = shaderAdapter.resolve();
+            validateCaptureSource(captureSource);
+            List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, captureSource);
             for (CapturedFrame frame : frames) {
                 exporterFor(frame).export(frame);
             }
@@ -109,7 +111,7 @@ public enum CaptureController {
             }
         } catch (Exception exception) {
             Constants.LOG.error("Capture failed", exception);
-            notifyClient(Component.literal(buildFailureMessage(exception)));
+            notifyClient(buildFailureMessage(exception));
             stop();
         }
     }
@@ -122,8 +124,22 @@ public enum CaptureController {
         long frames = session == null ? 0 : session.capturedFrames();
         closeExporters();
         session = null;
+        captureSource = null;
         state = CaptureState.IDLE;
-        notifyClient(Component.literal("Perfect Frame recording stopped (" + frames + " frames)."));
+        notifyClient("Perfect Frame recording stopped (" + frames + " frames).");
+    }
+
+    private void validateCaptureSource(CaptureSource source) {
+        boolean needsColor = config.capture.recordColor || config.capture.recordAlpha;
+        if (needsColor && !source.hasColor()) {
+            throw new IllegalStateException(source.colorUnavailableReason());
+        }
+        if (config.capture.recordDepth && !source.hasDepth()) {
+            throw new IllegalStateException(source.depthUnavailableReason());
+        }
+        if (!needsColor && !config.capture.recordDepth) {
+            throw new IllegalStateException("No capture streams are enabled.");
+        }
     }
 
     private FrameExporter exporterFor(CapturedFrame frame) throws Exception {
@@ -150,11 +166,8 @@ public enum CaptureController {
         exporters.clear();
     }
 
-    private void notifyClient(Component component) {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.gui != null) {
-            minecraft.gui.getChat().addMessage(component);
-        }
+    private void notifyClient(String message) {
+        Services.PLATFORM.clientAccess().postChatMessage(message);
     }
 
     private String buildFailureMessage(Exception exception) {

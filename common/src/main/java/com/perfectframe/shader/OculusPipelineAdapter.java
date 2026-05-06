@@ -1,7 +1,6 @@
 package com.perfectframe.shader;
 
 import com.perfectframe.platform.Services;
-import net.minecraft.client.Minecraft;
 
 public final class OculusPipelineAdapter implements ShaderPipelineAdapter {
     @Override
@@ -10,17 +9,13 @@ public final class OculusPipelineAdapter implements ShaderPipelineAdapter {
     }
 
     @Override
-    public boolean isAvailable(Minecraft minecraft) {
+    public boolean isAvailable() {
         return Services.PLATFORM.isModLoaded("oculus");
     }
 
     @Override
-    public boolean supportsDepthCapture(Minecraft minecraft) {
-        return false;
-    }
-
-    @Override
-    public String unavailableDepthReason() {
-        return "Oculus is detected, but the first implementation only routes color through the vanilla fallback. The Oculus depth target bridge still needs a concrete API hook.";
+    public CaptureSource resolve() {
+        String reason = "Oculus is deferred for a later multi-version Forge integration.";
+        return CaptureSource.unavailable(id(), "oculus", reason, reason);
     }
 }

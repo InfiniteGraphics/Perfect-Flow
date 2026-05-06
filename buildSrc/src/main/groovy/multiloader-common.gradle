@@ -8,9 +8,14 @@ base {
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(java_version)
+    sourceCompatibility = JavaVersion.toVersion(java_version)
+    targetCompatibility = JavaVersion.toVersion(java_version)
     withSourcesJar()
     withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = Integer.parseInt(java_version)
 }
 
 repositories {
@@ -81,6 +86,8 @@ processResources {
             'fabric_loader_version'        : fabric_loader_version,
             'modmenu_version'              : modmenu_version,
             'cloth_config_version'         : cloth_config_version,
+            'iris_version'                 : iris_version,
+            'sodium_version'               : sodium_version,
             'mod_name'                     : mod_name,
             'mod_author'                   : mod_author,
             'mod_id'                       : mod_id,

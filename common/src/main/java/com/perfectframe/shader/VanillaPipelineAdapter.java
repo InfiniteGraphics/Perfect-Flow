@@ -1,6 +1,6 @@
 package com.perfectframe.shader;
 
-import net.minecraft.client.Minecraft;
+import com.perfectframe.platform.Services;
 
 public final class VanillaPipelineAdapter implements ShaderPipelineAdapter {
     @Override
@@ -9,12 +9,13 @@ public final class VanillaPipelineAdapter implements ShaderPipelineAdapter {
     }
 
     @Override
-    public boolean isAvailable(Minecraft minecraft) {
+    public boolean isAvailable() {
         return true;
     }
 
     @Override
-    public boolean supportsDepthCapture(Minecraft minecraft) {
-        return true;
+    public CaptureSource resolve() {
+        RenderTargetCaptureAttachment attachment = new RenderTargetCaptureAttachment(Services.PLATFORM.mainTarget());
+        return CaptureSource.available(id(), "vanilla/main-target", attachment, attachment);
     }
 }

@@ -4,7 +4,10 @@
   "package": "com.perfectframe.fabric.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [],
-  "client": [],
+  "client": [
+    "MixinGameRenderer",
+    "MixinMinecraftClient"
+  ],
   "server": [],
   "injectors": {
     "defaultRequire": 1

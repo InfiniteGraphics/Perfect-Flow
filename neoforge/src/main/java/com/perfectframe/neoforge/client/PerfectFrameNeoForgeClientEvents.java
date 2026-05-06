@@ -41,7 +41,7 @@ public final class PerfectFrameNeoForgeClientEvents {
     @SubscribeEvent
     public static void afterRenderLevel(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            CaptureClientHooks.afterWorldRender();
+            CaptureClientHooks.captureFinalFrame();
         }
     }
 

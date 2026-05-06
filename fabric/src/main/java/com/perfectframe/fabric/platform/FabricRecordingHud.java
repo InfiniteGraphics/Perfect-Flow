@@ -1,21 +1,21 @@
-package com.perfectframe.ui;
+package com.perfectframe.fabric.platform;
 
 import com.perfectframe.capture.CaptureController;
 import com.perfectframe.capture.CaptureSession;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
 
-public final class RecordingHud {
-    private RecordingHud() {
+public final class FabricRecordingHud {
+    private FabricRecordingHud() {
     }
 
-    public static void render(GuiGraphics graphics, CaptureController controller) {
+    public static void render(DrawContext graphics, CaptureController controller) {
         CaptureSession session = controller.session();
         if (!controller.isRecording() || session == null || !session.config().capture.showRecordingHud) {
             return;
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
+        MinecraftClient minecraft = MinecraftClient.getInstance();
         String size = session.outputWidth() > 0 && session.outputHeight() > 0
                 ? " " + session.outputWidth() + "x" + session.outputHeight()
                 : "";
@@ -23,11 +23,11 @@ public final class RecordingHud {
                 ? " q" + session.exporterQueueDepth() + "/" + session.exporterQueueCapacity()
                 : "";
         String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps" + size + queue;
-        int width = minecraft.font.width(text);
-        int x = minecraft.getWindow().getGuiScaledWidth() - width - 10;
+        int width = minecraft.textRenderer.getWidth(text);
+        int x = minecraft.getWindow().getScaledWidth() - width - 10;
         int y = 10;
         graphics.fill(x - 5, y - 4, x + width + 5, y + 12, 0x99000000);
         graphics.fill(x - 12, y + 1, x - 6, y + 7, 0xffff3333);
-        graphics.drawString(minecraft.font, text, x, y, 0xffffffff, true);
+        graphics.drawText(minecraft.textRenderer, text, x, y, 0xffffffff, true);
     }
 }
