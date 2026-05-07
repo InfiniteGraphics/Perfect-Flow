@@ -73,15 +73,15 @@ public enum CaptureController {
             validateCaptureSource(captureSource);
             if (config.shader.captureMode == PerfectFrameConfig.ShaderCaptureMode.OCULUS
                     && Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode) == PerfectFrameConfig.ShaderCaptureMode.IRIS) {
-                notifyClient("Perfect Frame: OCULUS mode maps to IRIS on Fabric 1.20.4.");
+                notifyClient(Constants.MOD_NAME + ": OCULUS mode maps to IRIS on Fabric 1.20.4.");
             }
             exporters.clear();
             state = CaptureState.RECORDING;
-            Constants.LOG.info("Perfect Frame capture source: {}", captureSource.label());
-            notifyClient("Perfect Frame recording started (" + captureSource.label() + ").");
+            Constants.LOG.info("{} capture source: {}", Constants.MOD_NAME, captureSource.label());
+            notifyClient(Constants.MOD_NAME + " recording started (" + captureSource.label() + ").");
         } catch (Exception exception) {
             Constants.LOG.error("Failed to start capture", exception);
-            notifyClient("Perfect Frame failed to start: " + exception.getMessage());
+            notifyClient(Constants.MOD_NAME + " failed to start: " + exception.getMessage());
             closeExporters();
             session = null;
             captureSource = null;
@@ -104,7 +104,15 @@ public enum CaptureController {
             validateCaptureSource(captureSource);
             List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, captureSource);
             for (CapturedFrame frame : frames) {
-                exporterFor(frame).export(frame);
+                boolean exported = false;
+                try {
+                    exporterFor(frame).export(frame);
+                    exported = true;
+                } finally {
+                    if (!exported) {
+                        frame.release();
+                    }
+                }
             }
             if (!frames.isEmpty()) {
                 session.advanceFrame();
@@ -126,7 +134,7 @@ public enum CaptureController {
         session = null;
         captureSource = null;
         state = CaptureState.IDLE;
-        notifyClient("Perfect Frame recording stopped (" + frames + " frames).");
+        notifyClient(Constants.MOD_NAME + " recording stopped (" + frames + " frames).");
     }
 
     private void validateCaptureSource(CaptureSource source) {
@@ -180,10 +188,10 @@ public enum CaptureController {
             String lower = message.toLowerCase();
             if (lower.contains("pipe") || lower.contains("ffmpeg exited")) {
                 Path logHintDir = session.outputDirectory();
-                return "Perfect Frame capture failed: FFmpeg exited early. Check " + logHintDir + " for a *.ffmpeg.log file. Lower ffmpeg.videoBitrateKbps or capture resolution if the encoder cannot keep up.";
+                return Constants.MOD_NAME + " capture failed: FFmpeg exited early. Check " + logHintDir + " for a *.ffmpeg.log file. Lower ffmpeg.videoBitrateKbps or capture resolution if the encoder cannot keep up.";
             }
         }
 
-        return "Perfect Frame capture failed: " + message;
+        return Constants.MOD_NAME + " capture failed: " + message;
     }
 }

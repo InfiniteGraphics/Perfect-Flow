@@ -12,10 +12,10 @@ import org.lwjgl.glfw.GLFW;
 @Mod.EventBusSubscriber(modid = Constants.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class PerfectFrameNeoForgeClientBindings {
     private static final KeyMapping TOGGLE_RECORDING = new KeyMapping(
-            "key.perfectframe.toggle_recording",
+            "key.perfectflow.toggle_recording",
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_U,
-            "key.categories.perfectframe"
+            "key.categories.perfectflow"
     );
 
     private PerfectFrameNeoForgeClientBindings() {

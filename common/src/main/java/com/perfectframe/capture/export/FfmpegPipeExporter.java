@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class FfmpegPipeExporter implements FrameExporter {
     private static final long ENQUEUE_POLL_MILLIS = 100L;
-    private static final QueuedFrame POISON = new QueuedFrame(null);
+    private static final QueuedFrame POISON = new QueuedFrame(null, true);
 
     private Process process;
     private WritableByteChannel pipe;
@@ -61,7 +61,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         stallTimeoutMillis = config.ffmpeg.writerStallTimeoutMillis;
         queue = new ArrayBlockingQueue<>(queueCapacity);
         session.setExporterQueueStatus(0, queueCapacity);
-        writerThread = new Thread(this::writeQueuedFrames, "Perfect Frame FFmpeg Writer " + streamName);
+        writerThread = new Thread(this::writeQueuedFrames, "PerfectFlow FFmpeg Writer " + streamName);
         writerThread.setDaemon(true);
         writerThread.start();
     }
@@ -204,7 +204,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
     }
 
     private void enqueueFrame(CapturedFrame frame) throws Exception {
-        QueuedFrame queuedFrame = new QueuedFrame(frame.pixels());
+        QueuedFrame queuedFrame = new QueuedFrame(frame, false);
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(stallTimeoutMillis);
         while (!queue.offer(queuedFrame, ENQUEUE_POLL_MILLIS, TimeUnit.MILLISECONDS)) {
             throwIfWriterFailed();
@@ -223,11 +223,15 @@ public final class FfmpegPipeExporter implements FrameExporter {
         try {
             while (true) {
                 QueuedFrame queuedFrame = queue.take();
-                if (queuedFrame == POISON) {
+                if (queuedFrame.poison()) {
                     break;
                 }
-                writeFully(queuedFrame.pixels());
-                session.setExporterQueueStatus(queue.size(), queueCapacity);
+                try {
+                    writeFully(queuedFrame.frame().pixels());
+                    session.setExporterQueueStatus(queue.size(), queueCapacity);
+                } finally {
+                    queuedFrame.frame().release();
+                }
             }
         } catch (Exception exception) {
             writerFailure = exception;
@@ -279,6 +283,6 @@ public final class FfmpegPipeExporter implements FrameExporter {
         return result;
     }
 
-    private record QueuedFrame(ByteBuffer pixels) {
+    private record QueuedFrame(CapturedFrame frame, boolean poison) {
     }
 }

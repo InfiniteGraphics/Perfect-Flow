@@ -29,7 +29,7 @@ public final class IrisCaptureBridge {
 
         Optional<Integer> depthTexture = findDepthTextureId();
         if (depthTexture.isEmpty()) {
-            String reason = "Iris is active, but Perfect Frame could not resolve the current Iris depth texture. Color capture is using the final main framebuffer output.";
+            String reason = "Iris is active, but PerfectFlow could not resolve the current Iris depth texture. Color capture is using the final main framebuffer output.";
             return new CaptureSource("iris", "iris/main-framebuffer-final", color, null, "", reason);
         }
 

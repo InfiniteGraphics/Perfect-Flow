@@ -1,6 +1,7 @@
 package com.perfectframe.capture.frame;
 
 import java.nio.ByteBuffer;
+import java.util.Objects;
 
 public final class CapturedFrame {
     private final String streamName;
@@ -9,14 +10,22 @@ public final class CapturedFrame {
     private final int height;
     private final PixelFormat format;
     private final ByteBuffer pixels;
+    private final Runnable releaseAction;
+    private boolean released;
 
     public CapturedFrame(String streamName, long frameIndex, int width, int height, PixelFormat format, ByteBuffer pixels) {
+        this(streamName, frameIndex, width, height, format, pixels, () -> {
+        });
+    }
+
+    public CapturedFrame(String streamName, long frameIndex, int width, int height, PixelFormat format, ByteBuffer pixels, Runnable releaseAction) {
         this.streamName = streamName;
         this.frameIndex = frameIndex;
         this.width = width;
         this.height = height;
         this.format = format;
         this.pixels = pixels;
+        this.releaseAction = Objects.requireNonNull(releaseAction, "releaseAction");
     }
 
     public String streamName() {
@@ -41,5 +50,13 @@ public final class CapturedFrame {
 
     public ByteBuffer pixels() {
         return pixels.asReadOnlyBuffer();
+    }
+
+    public void release() {
+        if (released) {
+            return;
+        }
+        released = true;
+        releaseAction.run();
     }
 }

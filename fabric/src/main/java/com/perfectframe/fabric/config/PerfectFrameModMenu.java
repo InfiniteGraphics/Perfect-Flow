@@ -17,7 +17,7 @@ public final class PerfectFrameModMenu implements ModMenuApi {
             PerfectFrameConfig config = CommonClass.config();
             ConfigBuilder builder = ConfigBuilder.create()
                     .setParentScreen(parent)
-                    .setTitle(Text.literal("Perfect Frame"));
+                    .setTitle(Text.literal("PerfectFlow"));
             ConfigEntryBuilder entries = builder.entryBuilder();
             ConfigCategory capture = builder.getOrCreateCategory(Text.literal("Capture"));
             capture.addEntry(entries.startIntField(Text.literal("FPS"), config.capture.fps)
@@ -27,7 +27,7 @@ public final class PerfectFrameModMenu implements ModMenuApi {
                     .setSaveConsumer(value -> config.capture.fps = value)
                     .build());
             capture.addEntry(entries.startStrField(Text.literal("Output path"), config.capture.outputPath)
-                    .setDefaultValue("perfectframe_captures")
+                    .setDefaultValue("perfectflow_captures")
                     .setSaveConsumer(value -> config.capture.outputPath = value)
                     .build());
             capture.addEntry(entries.startEnumSelector(Text.literal("Resolution mode"), PerfectFrameConfig.ResolutionMode.class, config.capture.resolutionMode)
@@ -63,6 +63,33 @@ public final class PerfectFrameModMenu implements ModMenuApi {
             capture.addEntry(entries.startBooleanToggle(Text.literal("Show recording HUD"), config.capture.showRecordingHud)
                     .setDefaultValue(true)
                     .setSaveConsumer(value -> config.capture.showRecordingHud = value)
+                    .build());
+            ConfigCategory motionBlur = builder.getOrCreateCategory(Text.literal("Motion Blur"));
+            motionBlur.addEntry(entries.startBooleanToggle(Text.literal("Enable motion blur"), config.motionBlur.enabled)
+                    .setDefaultValue(false)
+                    .setSaveConsumer(value -> config.motionBlur.enabled = value)
+                    .build());
+            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Mode"), PerfectFrameConfig.MotionBlurMode.class, config.motionBlur.mode)
+                    .setDefaultValue(PerfectFrameConfig.MotionBlurMode.FRAME_BLEND)
+                    .setSaveConsumer(value -> config.motionBlur.mode = value)
+                    .build());
+            motionBlur.addEntry(entries.startDoubleField(Text.literal("Shutter fraction"), config.motionBlur.shutterFraction)
+                    .setMin(0.0D)
+                    .setMax(1.0D)
+                    .setDefaultValue(0.5D)
+                    .setSaveConsumer(value -> config.motionBlur.shutterFraction = value)
+                    .build());
+            motionBlur.addEntry(entries.startIntField(Text.literal("Accumulation samples"), config.motionBlur.sampleCount)
+                    .setMin(2)
+                    .setMax(16)
+                    .setDefaultValue(4)
+                    .setSaveConsumer(value -> config.motionBlur.sampleCount = value)
+                    .build());
+            motionBlur.addEntry(entries.startIntField(Text.literal("Blend history frames"), config.motionBlur.blendFrameCount)
+                    .setMin(2)
+                    .setMax(16)
+                    .setDefaultValue(4)
+                    .setSaveConsumer(value -> config.motionBlur.blendFrameCount = value)
                     .build());
             ConfigCategory shader = builder.getOrCreateCategory(Text.literal("Shader"));
             shader.addEntry(entries.startEnumSelector(Text.literal("Capture mode"), FabricShaderCaptureMode.class, FabricShaderCaptureMode.from(config.shader.captureMode))

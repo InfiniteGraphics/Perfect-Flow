@@ -16,10 +16,10 @@ public final class PerfectFrameFabric implements ClientModInitializer {
     public void onInitializeClient() {
         CommonClass.init();
         toggleRecording = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.perfectframe.toggle_recording",
+                "key.perfectflow.toggle_recording",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_U,
-                "key.categories.perfectframe"
+                "key.categories.perfectflow"
         ));
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> CaptureClientHooks.renderHud(graphics));
     }

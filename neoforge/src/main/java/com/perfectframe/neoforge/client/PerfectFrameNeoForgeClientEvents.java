@@ -27,7 +27,7 @@ public final class PerfectFrameNeoForgeClientEvents {
         if (!announcedClientLoad) {
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.player != null) {
-                minecraft.player.displayClientMessage(Component.literal("Perfect Frame NeoForge dev build loaded. Toggle recording with U."), false);
+                minecraft.player.displayClientMessage(Component.literal("PerfectFlow NeoForge dev build loaded. Toggle recording with U."), false);
                 Constants.LOG.info("{} NeoForge client load announcement sent", Constants.MOD_NAME);
                 announcedClientLoad = true;
             }

@@ -47,6 +47,8 @@ public final class TgaSequenceExporter implements FrameExporter {
         try (FileChannel channel = FileChannel.open(target, CREATE, WRITE, TRUNCATE_EXISTING)) {
             channel.write(header);
             channel.write(frame.pixels());
+        } finally {
+            frame.release();
         }
     }
 

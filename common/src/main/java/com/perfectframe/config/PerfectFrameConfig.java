@@ -31,6 +31,7 @@ public class PerfectFrameConfig {
     public Sync sync = new Sync();
     public Ffmpeg ffmpeg = new Ffmpeg();
     public Shader shader = new Shader();
+    public MotionBlur motionBlur = new MotionBlur();
 
     public static PerfectFrameConfig load(Path configDirectory) {
         Path configFile = configDirectory.resolve(FILE_NAME);
@@ -76,6 +77,7 @@ public class PerfectFrameConfig {
         if (sync == null) sync = new Sync();
         if (ffmpeg == null) ffmpeg = new Ffmpeg();
         if (shader == null) shader = new Shader();
+        if (motionBlur == null) motionBlur = new MotionBlur();
         if (ffmpeg.mode == null) {
             ffmpeg.mode = FfmpegMode.CUSTOM_PATH;
             changed = true;
@@ -115,7 +117,7 @@ public class PerfectFrameConfig {
             changed = true;
         }
         if (capture.outputPath == null || capture.outputPath.isBlank()) {
-            capture.outputPath = "perfectframe_captures";
+            capture.outputPath = "perfectflow_captures";
             changed = true;
         }
         if (ffmpeg.customPath == null) {
@@ -148,6 +150,25 @@ public class PerfectFrameConfig {
             ffmpeg.videoArgs = "";
             changed = true;
         }
+        if (motionBlur.mode == null) {
+            motionBlur.mode = MotionBlurMode.FRAME_BLEND;
+            changed = true;
+        }
+        double normalizedShutterFraction = Math.max(0.0D, Math.min(1.0D, motionBlur.shutterFraction));
+        if (Double.compare(motionBlur.shutterFraction, normalizedShutterFraction) != 0) {
+            motionBlur.shutterFraction = normalizedShutterFraction;
+            changed = true;
+        }
+        int normalizedSampleCount = Math.max(2, Math.min(16, motionBlur.sampleCount));
+        if (motionBlur.sampleCount != normalizedSampleCount) {
+            motionBlur.sampleCount = normalizedSampleCount;
+            changed = true;
+        }
+        int normalizedBlendFrameCount = Math.max(2, Math.min(16, motionBlur.blendFrameCount));
+        if (motionBlur.blendFrameCount != normalizedBlendFrameCount) {
+            motionBlur.blendFrameCount = normalizedBlendFrameCount;
+            changed = true;
+        }
         return changed;
     }
 
@@ -161,7 +182,7 @@ public class PerfectFrameConfig {
 
     public static class Capture {
         public int fps = 60;
-        public String outputPath = "perfectframe_captures";
+        public String outputPath = "perfectflow_captures";
         public OutputMode outputMode = OutputMode.FFMPEG_MP4;
         public boolean recordColor = true;
         public boolean recordAlpha = false;
@@ -194,6 +215,14 @@ public class PerfectFrameConfig {
         public ShaderCaptureMode captureMode = ShaderCaptureMode.AUTO;
     }
 
+    public static class MotionBlur {
+        public boolean enabled = false;
+        public MotionBlurMode mode = MotionBlurMode.FRAME_BLEND;
+        public double shutterFraction = 0.5D;
+        public int sampleCount = 4;
+        public int blendFrameCount = 4;
+    }
+
     public enum OutputMode {
         FFMPEG_MP4,
         TGA_SEQUENCE
@@ -220,6 +249,11 @@ public class PerfectFrameConfig {
         VANILLA,
         IRIS,
         OCULUS
+    }
+
+    public enum MotionBlurMode {
+        ACCUMULATION,
+        FRAME_BLEND
     }
 
     private static final class FfmpegModeAdapter implements JsonSerializer<FfmpegMode>, JsonDeserializer<FfmpegMode> {
