@@ -68,17 +68,9 @@ public final class FfmpegPipeExporter implements FrameExporter {
         Files.createDirectories(session.outputDirectory());
         Path ffmpeg = FfmpegLocator.locate(config);
         outputFile = session.outputDirectory().resolve(session.name() + "_" + streamName + ".mp4");
-        audioRequested = shouldUseAudio(config, streamName, format);
-        audioSupported = audioRequested;
-        audioActive = false;
+        audioRequested = shouldUseAudio(session, streamName, format);
         tempVideoFile = audioRequested ? session.outputDirectory().resolve(session.name() + "_" + streamName + ".video.tmp.mp4") : outputFile;
-        tempAudioFile = audioRequested ? session.outputDirectory().resolve(session.name() + "_" + streamName + ".audio.tmp.wav") : null;
-
-        if (config.audio != null && config.audio.enabled && !audioRequested) {
-            session.setAudioStatus(false, true, audioDowngradeReason(config, streamName, format));
-        } else if (audioRequested) {
-            session.setAudioStatus(false, false, "");
-        }
+        tempAudioFile = audioRequested ? session.audioTempFile() : null;
 
         List<String> command = new ArrayList<>();
         command.add(ffmpeg.toString());
@@ -106,28 +98,11 @@ public final class FfmpegPipeExporter implements FrameExporter {
         writerThread = new Thread(this::writeQueuedFrames, "PerfectFlow FFmpeg Writer " + streamName);
         writerThread.setDaemon(true);
         writerThread.start();
-        if (audioRequested) {
-            try {
-                startAudioCapture(config);
-                audioActive = true;
-                session.setAudioStatus(true, false, "");
-            } catch (Exception exception) {
-                audioActive = false;
-                audioSupported = false;
-                String detail = exception.getMessage();
-                if (detail == null || detail.isBlank()) {
-                    detail = "Audio capture unavailable on this platform or device.";
-                }
-                session.setAudioStatus(false, true, detail);
-                cleanupTempAudio();
-            }
-        }
     }
 
     @Override
     public void export(CapturedFrame frame) throws Exception {
         throwIfWriterFailed();
-        updateAudioHealth();
         if (closing) {
             throw new IllegalStateException("FFmpeg writer is already closing");
         }
@@ -167,13 +142,10 @@ public final class FfmpegPipeExporter implements FrameExporter {
                 throw new IllegalStateException(message);
             }
         }
-        finishAudioCapture();
-        if (audioRequested && audioActive && audioSupported && tempAudioFile != null && Files.exists(tempAudioFile) && Files.size(tempAudioFile) > 0L) {
+        if (audioRequested && tempAudioFile != null && Files.exists(tempAudioFile) && Files.size(tempAudioFile) > 44L) {
             try {
                 remuxAudioIntoFinalFile();
             } catch (Exception exception) {
-                audioSupported = false;
-                session.setAudioStatus(false, true, "Audio mux failed; saved video-only output.");
                 moveTempVideoToFinal();
             } finally {
                 cleanupTempAudio();
@@ -286,8 +258,9 @@ public final class FfmpegPipeExporter implements FrameExporter {
                 && "color".equals(streamName);
     }
 
-    private boolean shouldUseAudio(PerfectFlowConfig config, String streamName, PixelFormat format) {
-        if (config.audio == null || !config.audio.enabled) {
+    private boolean shouldUseAudio(CaptureSession session, String streamName, PixelFormat format) {
+        PerfectFlowConfig config = session.config();
+        if (!session.effectiveAudioEnabled()) {
             return false;
         }
         if (!"color".equals(streamName)) {
@@ -302,29 +275,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
             return false;
         }
-        return isWindows();
-    }
-
-    private String audioDowngradeReason(PerfectFlowConfig config, String streamName, PixelFormat format) {
-        if (config.audio == null || !config.audio.enabled) {
-            return "";
-        }
-        if (!"color".equals(streamName)) {
-            return "Audio is only attached to the main color stream.";
-        }
-        if (format != PixelFormat.BGR24 && format != PixelFormat.BGRA32) {
-            return "Audio is only supported for color capture.";
-        }
-        if (config.capture.outputMode != PerfectFlowConfig.OutputMode.FFMPEG_MP4) {
-            return "Audio is only supported for MP4 output.";
-        }
-        if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
-            return "Audio is disabled when advanced FFmpeg video args are in use.";
-        }
-        if (!isWindows()) {
-            return "Audio recording is currently supported on Windows only.";
-        }
-        return "Audio recording is unavailable on this platform or configuration.";
+        return true;
     }
 
     private String buildVideoFilter(PerfectFlowConfig config, String streamName, int outputWidth, int outputHeight) {

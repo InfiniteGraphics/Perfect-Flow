@@ -51,6 +51,10 @@ public final class CaptureSession {
         return name;
     }
 
+    public Path audioTempFile() {
+        return outputDirectory.resolve(name + "_color.audio.tmp.wav");
+    }
+
     public FrameScheduler scheduler() {
         return scheduler;
     }

@@ -1,6 +1,7 @@
 package com.perfectframe.capture;
 
 import com.perfectframe.Constants;
+import com.perfectframe.audio.GameAudioCapture;
 import com.perfectframe.capture.export.FfmpegPipeExporter;
 import com.perfectframe.capture.export.FrameExporter;
 import com.perfectframe.capture.export.TgaSequenceExporter;
@@ -83,7 +84,13 @@ public enum CaptureController {
             audioDowngradeNotified = false;
             session.setEffectiveSyncMode(config.sync.mode);
             if (isAudioPotentiallySupported()) {
-                session.setAudioStatus(config.audio != null && config.audio.enabled, false, "");
+                GameAudioCapture audioCapture = Services.PLATFORM.clientAccess().gameAudioCapture();
+                String audioFailure = audioCapture.start(session);
+                if (audioFailure == null) {
+                    session.setAudioStatus(true, false, "");
+                } else {
+                    session.setAudioStatus(false, true, audioFailure);
+                }
             } else if (config.audio != null && config.audio.enabled) {
                 session.setAudioStatus(false, true, buildAudioDowngradeReason());
             } else {
@@ -144,6 +151,9 @@ public enum CaptureController {
                 }
             }
             if (!frames.isEmpty()) {
+                if (session.effectiveAudioEnabled()) {
+                    Services.PLATFORM.clientAccess().gameAudioCapture().advanceFrame(session);
+                }
                 session.advanceFrame();
             }
         } catch (Exception exception) {
@@ -159,6 +169,7 @@ public enum CaptureController {
         }
         state = CaptureState.STOPPING;
         long frames = session == null ? 0 : session.capturedFrames();
+        Services.PLATFORM.clientAccess().gameAudioCapture().stop();
         closeExporters();
         session = null;
         clearCaptureSource();
@@ -295,7 +306,7 @@ public enum CaptureController {
                 && config.audio.enabled
                 && config.capture.outputMode == PerfectFlowConfig.OutputMode.FFMPEG_MP4
                 && (config.ffmpeg.videoArgs == null || config.ffmpeg.videoArgs.isBlank())
-                && System.getProperty("os.name", "").toLowerCase().contains("win");
+                && (config.capture.recordColor || config.capture.recordAlpha);
     }
 
     private String buildAudioDowngradeReason() {
@@ -308,9 +319,6 @@ public enum CaptureController {
         if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
             return "Audio recording is disabled when advanced FFmpeg video args are in use.";
         }
-        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
-            return "Audio recording is currently supported on Windows only.";
-        }
-        return "Audio recording is unavailable on this platform or configuration.";
+        return "Game audio capture is unavailable on this platform or configuration.";
     }
 }

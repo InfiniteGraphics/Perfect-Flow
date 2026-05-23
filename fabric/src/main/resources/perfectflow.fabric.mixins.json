@@ -5,6 +5,9 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [],
   "client": [
+    "SoundSystemAccessor",
+    "SourceInvoker",
+    "SoundSystemAudioCaptureMixin",
     "MixinGameRenderer",
     "MixinMinecraftClient"
   ],

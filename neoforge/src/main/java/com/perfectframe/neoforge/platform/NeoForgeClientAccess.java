@@ -2,6 +2,8 @@ package com.perfectframe.neoforge.platform;
 
 import com.perfectframe.capture.CaptureController;
 import com.perfectframe.capture.CaptureSession;
+import com.perfectframe.audio.GameAudioCapture;
+import com.perfectframe.audio.NoopGameAudioCapture;
 import com.perfectframe.capture.frame.CapturedFrame;
 import com.perfectframe.capture.pipeline.RenderCapturePipeline;
 import com.perfectframe.platform.services.ClientAccess;
@@ -15,6 +17,7 @@ import java.util.List;
 
 public final class NeoForgeClientAccess implements ClientAccess {
     private final RenderCapturePipeline capturePipeline = new RenderCapturePipeline();
+    private final GameAudioCapture gameAudioCapture = new NoopGameAudioCapture();
 
     @Override
     public Path gameDirectory() {
@@ -35,6 +38,11 @@ public final class NeoForgeClientAccess implements ClientAccess {
     @Override
     public List<CapturedFrame> captureFrames(CaptureSession session, CaptureSource source) {
         return capturePipeline.capture(session, source);
+    }
+
+    @Override
+    public GameAudioCapture gameAudioCapture() {
+        return gameAudioCapture;
     }
 
     @Override
