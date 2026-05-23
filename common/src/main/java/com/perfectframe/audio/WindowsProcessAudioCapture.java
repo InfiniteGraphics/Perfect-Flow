@@ -30,6 +30,8 @@ public final class WindowsProcessAudioCapture implements SystemAudioCapture {
     private Path metadataFile;
     private Path logFile;
     private String failureDetail = "";
+    private SystemAudioMetadata liveMetadata;
+    private long lastCapturedFrames;
 
     public static SystemAudioCapture createOrNoop() {
         return isWindows() ? new WindowsProcessAudioCapture() : new NoopSystemAudioCapture();
@@ -47,6 +49,8 @@ public final class WindowsProcessAudioCapture implements SystemAudioCapture {
         metadataFile = session.audioMetadataFile();
         logFile = session.audioCaptureLogFile();
         failureDetail = "";
+        liveMetadata = null;
+        lastCapturedFrames = 0L;
 
         try {
             Files.createDirectories(rawFile.getParent());
@@ -88,6 +92,7 @@ public final class WindowsProcessAudioCapture implements SystemAudioCapture {
                         return fail("Audio helper closed its output unexpectedly. Check " + logFile + ".");
                     }
                     if (line.startsWith("READY|")) {
+                        parseReadyLine(line);
                         return null;
                     }
                     if (line.startsWith("ERROR|")) {
@@ -150,6 +155,26 @@ public final class WindowsProcessAudioCapture implements SystemAudioCapture {
         }
     }
 
+    @Override
+    public long currentCapturedFrames() {
+        if (liveMetadata == null || rawFile == null) {
+            return -1L;
+        }
+        long bytesPerFrame = liveMetadata.bytesPerFrame();
+        if (bytesPerFrame <= 0L) {
+            return -1L;
+        }
+        try {
+            long currentFrames = Files.exists(rawFile) ? Files.size(rawFile) / bytesPerFrame : 0L;
+            if (currentFrames > lastCapturedFrames) {
+                lastCapturedFrames = currentFrames;
+            }
+            return lastCapturedFrames;
+        } catch (IOException ignored) {
+            return lastCapturedFrames > 0L ? lastCapturedFrames : -1L;
+        }
+    }
+
     private String fail(String detail) {
         failureDetail = detail == null ? "" : detail.trim();
         stop();
@@ -166,6 +191,17 @@ public final class WindowsProcessAudioCapture implements SystemAudioCapture {
             return "Windows process audio capture stopped early. Check " + logFile + ".";
         }
         return "Windows process audio capture stopped early.";
+    }
+
+    private void parseReadyLine(String line) throws IOException {
+        String[] parts = line.split("\\|");
+        if (parts.length < 4) {
+            throw new IOException("Audio helper reported an invalid READY line.");
+        }
+        int sampleRate = Integer.parseInt(parts[1].trim());
+        int channels = Integer.parseInt(parts[2].trim());
+        String sampleFormat = parts[3].trim();
+        liveMetadata = new SystemAudioMetadata(sampleRate, channels, sampleFormat, 0L);
     }
 
     private Path extractHelperScript(Path outputDirectory) throws IOException {

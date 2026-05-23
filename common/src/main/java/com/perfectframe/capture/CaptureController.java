@@ -32,6 +32,7 @@ public enum CaptureController {
     private boolean keyToggleQueued;
     private boolean syncDowngradeNotified;
     private boolean audioDowngradeNotified;
+    private boolean audioAnchorDowngradeNotified;
 
     public void configure(PerfectFlowConfig config) {
         this.config = config;
@@ -82,12 +83,18 @@ public enum CaptureController {
             exporters.clear();
             syncDowngradeNotified = false;
             audioDowngradeNotified = false;
+            audioAnchorDowngradeNotified = false;
             session.setEffectiveSyncMode(config.sync.mode);
             if (isAudioPotentiallySupported()) {
                 SystemAudioCapture audioCapture = Services.PLATFORM.clientAccess().systemAudioCapture();
                 String audioFailure = audioCapture.start(session);
                 if (audioFailure == null) {
                     session.setAudioStatus(true, false, "");
+                    try {
+                        session.prepareAudioAnchors();
+                    } catch (Exception exception) {
+                        session.markPreciseAudioSyncUnavailable("Failed to initialize audio sync anchors: " + exception.getMessage());
+                    }
                 } else {
                     session.setAudioStatus(false, true, audioFailure);
                 }
@@ -137,6 +144,13 @@ public enum CaptureController {
                         ? Constants.MOD_NAME + ": audio recording downgraded to video-only."
                         : Constants.MOD_NAME + ": audio recording downgraded to video-only. " + detail);
             }
+            if (session.effectiveAudioEnabled() && session.preciseAudioSyncDowngraded() && !audioAnchorDowngradeNotified) {
+                audioAnchorDowngradeNotified = true;
+                String detail = session.preciseAudioSyncDetail();
+                notifyClient(detail == null || detail.isBlank()
+                        ? Constants.MOD_NAME + ": precise audio sync is unavailable. Falling back to basic audio alignment."
+                        : Constants.MOD_NAME + ": precise audio sync is unavailable. Falling back to basic audio alignment. " + detail);
+            }
             session.scheduler().awaitFrameWindow(effectiveSyncMode == PerfectFlowConfig.SyncMode.NORMAL);
             CaptureSource activeSource = resolveCaptureSource(false);
             List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, activeSource);
@@ -153,7 +167,12 @@ public enum CaptureController {
             }
             if (!frames.isEmpty()) {
                 if (session.effectiveAudioEnabled()) {
-                    Services.PLATFORM.clientAccess().systemAudioCapture().advanceFrame(session);
+                    SystemAudioCapture audioCapture = Services.PLATFORM.clientAccess().systemAudioCapture();
+                    audioCapture.advanceFrame(session);
+                    long audioFramesCaptured = audioCapture.currentCapturedFrames();
+                    if (session.effectiveAudioEnabled() && audioFramesCaptured >= 0L) {
+                        session.recordAudioAnchor(session.capturedFrames() + 1L, audioFramesCaptured);
+                    }
                 }
                 session.advanceFrame();
             }
@@ -171,11 +190,22 @@ public enum CaptureController {
         state = CaptureState.STOPPING;
         long frames = session == null ? 0 : session.capturedFrames();
         Services.PLATFORM.clientAccess().systemAudioCapture().stop();
+        if (session != null) {
+            session.finishAudioAnchors();
+        }
         closeExporters();
+        if (session != null && session.effectiveAudioEnabled() && session.preciseAudioSyncDowngraded() && !audioAnchorDowngradeNotified) {
+            audioAnchorDowngradeNotified = true;
+            String detail = session.preciseAudioSyncDetail();
+            notifyClient(detail == null || detail.isBlank()
+                    ? Constants.MOD_NAME + ": precise audio sync fell back to basic alignment."
+                    : Constants.MOD_NAME + ": precise audio sync fell back to basic alignment. " + detail);
+        }
         session = null;
         clearCaptureSource();
         syncDowngradeNotified = false;
         audioDowngradeNotified = false;
+        audioAnchorDowngradeNotified = false;
         state = CaptureState.IDLE;
         notifyClient(Constants.MOD_NAME + " recording stopped (" + frames + " frames).");
     }

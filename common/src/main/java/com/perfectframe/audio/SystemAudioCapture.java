@@ -10,4 +10,6 @@ public interface SystemAudioCapture {
     void stop();
 
     void advanceFrame(CaptureSession session);
+
+    long currentCapturedFrames();
 }

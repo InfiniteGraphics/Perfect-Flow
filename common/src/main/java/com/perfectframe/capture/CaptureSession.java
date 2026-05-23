@@ -2,7 +2,12 @@ package com.perfectframe.capture;
 
 import com.perfectframe.config.PerfectFlowConfig;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -19,6 +24,8 @@ public final class CaptureSession {
     private boolean effectiveAudioEnabled;
     private boolean audioDowngraded;
     private String audioStatusDetail = "";
+    private boolean preciseAudioSyncAvailable = true;
+    private String preciseAudioSyncDetail = "";
     private int captureWidth;
     private int captureHeight;
     private int outputWidth;
@@ -26,6 +33,8 @@ public final class CaptureSession {
     private int exporterQueueDepth;
     private int exporterQueueCapacity;
     private long capturedFrames;
+    private BufferedWriter audioAnchorWriter;
+    private long audioAnchorCount;
 
     public CaptureSession(PerfectFlowConfig config, Path outputDirectory) {
         this.config = config;
@@ -60,6 +69,10 @@ public final class CaptureSession {
 
     public Path audioCaptureLogFile() {
         return outputDirectory.resolve(name + "_color.audio-helper.log");
+    }
+
+    public Path audioAnchorFile() {
+        return outputDirectory.resolve(name + "_color.audio-anchors.csv");
     }
 
     public FrameScheduler scheduler() {
@@ -97,6 +110,22 @@ public final class CaptureSession {
 
     public String audioStatusDetail() {
         return audioStatusDetail;
+    }
+
+    public boolean preciseAudioSyncAvailable() {
+        return preciseAudioSyncAvailable;
+    }
+
+    public boolean preciseAudioSyncDowngraded() {
+        return !preciseAudioSyncAvailable;
+    }
+
+    public String preciseAudioSyncDetail() {
+        return preciseAudioSyncDetail;
+    }
+
+    public long audioAnchorCount() {
+        return audioAnchorCount;
     }
 
     public void setAudioStatus(boolean effectiveAudioEnabled, boolean downgraded, String detail) {
@@ -147,5 +176,67 @@ public final class CaptureSession {
 
     public boolean reachedFrameLimit() {
         return config.capture.frameLimit >= 0 && capturedFrames >= config.capture.frameLimit;
+    }
+
+    public void prepareAudioAnchors() throws IOException {
+        closeAudioAnchors();
+        Path anchorFile = audioAnchorFile();
+        Files.deleteIfExists(anchorFile);
+        audioAnchorWriter = Files.newBufferedWriter(anchorFile, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        audioAnchorWriter.write("videoFramesCompleted,audioFramesCaptured");
+        audioAnchorWriter.newLine();
+        audioAnchorWriter.flush();
+        preciseAudioSyncAvailable = true;
+        preciseAudioSyncDetail = "";
+        audioAnchorCount = 0L;
+    }
+
+    public void recordAudioAnchor(long videoFramesCompleted, long audioFramesCaptured) {
+        if (audioAnchorWriter == null || !preciseAudioSyncAvailable) {
+            return;
+        }
+        try {
+            audioAnchorWriter.write(videoFramesCompleted + "," + audioFramesCaptured);
+            audioAnchorWriter.newLine();
+            audioAnchorCount++;
+            if (audioAnchorCount <= 4 || (audioAnchorCount % 12L) == 0L) {
+                audioAnchorWriter.flush();
+            }
+        } catch (IOException exception) {
+            markPreciseAudioSyncUnavailable("Failed to write audio sync anchors: " + exception.getMessage());
+        }
+    }
+
+    public void finishAudioAnchors() {
+        if (audioAnchorWriter == null) {
+            return;
+        }
+        try {
+            audioAnchorWriter.flush();
+        } catch (IOException exception) {
+            if (preciseAudioSyncAvailable) {
+                markPreciseAudioSyncUnavailable("Failed to flush audio sync anchors: " + exception.getMessage());
+            }
+        } finally {
+            closeAudioAnchors();
+        }
+    }
+
+    public void markPreciseAudioSyncUnavailable(String detail) {
+        preciseAudioSyncAvailable = false;
+        preciseAudioSyncDetail = detail == null ? "" : detail;
+        closeAudioAnchors();
+    }
+
+    private void closeAudioAnchors() {
+        if (audioAnchorWriter == null) {
+            return;
+        }
+        try {
+            audioAnchorWriter.close();
+        } catch (IOException ignored) {
+        }
+        audioAnchorWriter = null;
     }
 }

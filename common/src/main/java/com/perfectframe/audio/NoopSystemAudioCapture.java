@@ -20,4 +20,9 @@ public final class NoopSystemAudioCapture implements SystemAudioCapture {
     @Override
     public void advanceFrame(CaptureSession session) {
     }
+
+    @Override
+    public long currentCapturedFrames() {
+        return -1L;
+    }
 }

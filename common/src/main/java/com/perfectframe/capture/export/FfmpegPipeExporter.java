@@ -42,6 +42,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
     private Path tempVideoFile;
     private Path tempAudioFile;
     private Path tempAudioMetadataFile;
+    private Path tempAudioAnchorFile;
     private boolean audioRequested;
 
     @Override
@@ -55,6 +56,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         tempVideoFile = audioRequested ? session.outputDirectory().resolve(session.name() + "_" + streamName + ".video.tmp.mp4") : outputFile;
         tempAudioFile = audioRequested ? session.audioTempFile() : null;
         tempAudioMetadataFile = audioRequested ? session.audioMetadataFile() : null;
+        tempAudioAnchorFile = audioRequested ? session.audioAnchorFile() : null;
 
         List<String> command = new ArrayList<>();
         command.add(ffmpeg.toString());
@@ -369,8 +371,8 @@ public final class FfmpegPipeExporter implements FrameExporter {
     private void remuxAudioIntoFinalFile() throws Exception {
         SystemAudioMetadata metadata = loadAudioMetadata();
         Path ffmpeg = FfmpegLocator.locate(session.config());
-        double videoDurationSeconds = session.capturedFrames() / (double) Math.max(1, session.scheduler().targetFps());
-        String audioFilter = "aresample=async=1:first_pts=0,apad,atrim=0:" + String.format(Locale.ROOT, "%.6f", videoDurationSeconds);
+        AudioSyncPlan syncPlan = buildAudioSyncPlan(metadata);
+        String audioFilter = buildAudioFilter(syncPlan);
         List<String> command = new ArrayList<>();
         command.add(ffmpeg.toString());
         command.add("-y");
@@ -441,6 +443,12 @@ public final class FfmpegPipeExporter implements FrameExporter {
             } catch (Exception ignored) {
             }
         }
+        if (tempAudioAnchorFile != null) {
+            try {
+                Files.deleteIfExists(tempAudioAnchorFile);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private boolean hasUsableAudioCapture() throws Exception {
@@ -465,6 +473,105 @@ public final class FfmpegPipeExporter implements FrameExporter {
             properties.load(reader);
         }
         return SystemAudioMetadata.fromProperties(properties);
+    }
+
+    private AudioSyncPlan buildAudioSyncPlan(SystemAudioMetadata metadata) {
+        double videoDurationSeconds = session.capturedFrames() / (double) Math.max(1, session.scheduler().targetFps());
+        List<AudioSyncAnchor> anchors;
+        try {
+            anchors = loadAudioAnchors();
+        } catch (Exception exception) {
+            session.markPreciseAudioSyncUnavailable("Failed to read audio sync anchors: " + exception.getMessage());
+            return AudioSyncPlan.basic(videoDurationSeconds);
+        }
+        if (anchors.size() < 2) {
+            session.markPreciseAudioSyncUnavailable("Audio sync anchors were missing or incomplete.");
+            return AudioSyncPlan.basic(videoDurationSeconds);
+        }
+        double fps = Math.max(1, session.scheduler().targetFps());
+        double sampleRate = Math.max(1, metadata.sampleRate());
+        RegressionFit fit = RegressionFit.fromAnchors(anchors, fps, sampleRate);
+        if (!fit.valid()) {
+            session.markPreciseAudioSyncUnavailable("Audio sync anchors could not produce a stable timing fit.");
+            return AudioSyncPlan.basic(videoDurationSeconds);
+        }
+
+        double trimStartSeconds = Math.max(0.0D, fit.interceptSeconds());
+        long delayMillis = fit.interceptSeconds() < 0.0D
+                ? Math.max(0L, Math.round(-fit.interceptSeconds() * 1000.0D))
+                : 0L;
+        double tempoFactor = fit.slope();
+        if (!Double.isFinite(tempoFactor) || tempoFactor <= 0.0D || tempoFactor < 0.5D || tempoFactor > 2.0D) {
+            session.markPreciseAudioSyncUnavailable("Audio sync drift fit was outside a safe range.");
+            return AudioSyncPlan.basic(videoDurationSeconds);
+        }
+        return new AudioSyncPlan(videoDurationSeconds, trimStartSeconds, delayMillis, tempoFactor, true);
+    }
+
+    private String buildAudioFilter(AudioSyncPlan plan) {
+        List<String> filters = new ArrayList<>();
+        if (plan.trimStartSeconds() > 0.000_001D) {
+            filters.add("atrim=start=" + formatDecimal(plan.trimStartSeconds()));
+            filters.add("asetpts=PTS-STARTPTS");
+        }
+        if (Math.abs(plan.tempoFactor() - 1.0D) > 0.000_5D) {
+            filters.addAll(buildAtempoFilters(plan.tempoFactor()));
+        }
+        filters.add("aresample=async=1:first_pts=0");
+        if (plan.delayMillis() > 0L) {
+            filters.add("adelay=" + plan.delayMillis() + ":all=1");
+        }
+        filters.add("apad");
+        filters.add("atrim=0:" + formatDecimal(plan.videoDurationSeconds()));
+        return String.join(",", filters);
+    }
+
+    private List<String> buildAtempoFilters(double tempoFactor) {
+        List<String> filters = new ArrayList<>();
+        double remaining = tempoFactor;
+        while (remaining > 2.0D) {
+            filters.add("atempo=2.0");
+            remaining /= 2.0D;
+        }
+        while (remaining < 0.5D) {
+            filters.add("atempo=0.5");
+            remaining /= 0.5D;
+        }
+        filters.add("atempo=" + formatDecimal(remaining));
+        return filters;
+    }
+
+    private List<AudioSyncAnchor> loadAudioAnchors() throws Exception {
+        if (tempAudioAnchorFile == null || !Files.exists(tempAudioAnchorFile)) {
+            return List.of();
+        }
+        List<String> lines = Files.readAllLines(tempAudioAnchorFile, StandardCharsets.UTF_8);
+        List<AudioSyncAnchor> anchors = new ArrayList<>();
+        long lastVideoFrames = -1L;
+        long lastAudioFrames = -1L;
+        for (String line : lines) {
+            String trimmed = line == null ? "" : line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("videoFramesCompleted")) {
+                continue;
+            }
+            String[] parts = trimmed.split(",", 2);
+            if (parts.length < 2) {
+                continue;
+            }
+            long videoFrames = Long.parseLong(parts[0].trim());
+            long audioFrames = Long.parseLong(parts[1].trim());
+            if (videoFrames <= lastVideoFrames || audioFrames < lastAudioFrames) {
+                continue;
+            }
+            anchors.add(new AudioSyncAnchor(videoFrames, audioFrames));
+            lastVideoFrames = videoFrames;
+            lastAudioFrames = audioFrames;
+        }
+        return anchors;
+    }
+
+    private String formatDecimal(double value) {
+        return String.format(Locale.ROOT, "%.6f", value);
     }
 
     private void writeFully(ByteBuffer pixels) throws Exception {
@@ -503,5 +610,51 @@ public final class FfmpegPipeExporter implements FrameExporter {
     }
 
     private record QueuedFrame(CapturedFrame frame, boolean poison) {
+    }
+
+    private record AudioSyncAnchor(long videoFramesCompleted, long audioFramesCaptured) {
+    }
+
+    private record AudioSyncPlan(
+            double videoDurationSeconds,
+            double trimStartSeconds,
+            long delayMillis,
+            double tempoFactor,
+            boolean precise
+    ) {
+        private static AudioSyncPlan basic(double videoDurationSeconds) {
+            return new AudioSyncPlan(videoDurationSeconds, 0.0D, 0L, 1.0D, false);
+        }
+    }
+
+    private record RegressionFit(double interceptSeconds, double slope, boolean valid) {
+        private static RegressionFit fromAnchors(List<AudioSyncAnchor> anchors, double fps, double sampleRate) {
+            int count = anchors.size();
+            if (count < 2) {
+                return new RegressionFit(0.0D, 1.0D, false);
+            }
+            double sumX = 0.0D;
+            double sumY = 0.0D;
+            double sumXX = 0.0D;
+            double sumXY = 0.0D;
+            for (AudioSyncAnchor anchor : anchors) {
+                double x = anchor.videoFramesCompleted() / fps;
+                double y = anchor.audioFramesCaptured() / sampleRate;
+                sumX += x;
+                sumY += y;
+                sumXX += x * x;
+                sumXY += x * y;
+            }
+            double denominator = (count * sumXX) - (sumX * sumX);
+            if (Math.abs(denominator) < 1.0E-9D) {
+                return new RegressionFit(0.0D, 1.0D, false);
+            }
+            double slope = ((count * sumXY) - (sumX * sumY)) / denominator;
+            double intercept = (sumY - (slope * sumX)) / count;
+            if (!Double.isFinite(slope) || !Double.isFinite(intercept)) {
+                return new RegressionFit(0.0D, 1.0D, false);
+            }
+            return new RegressionFit(intercept, slope, true);
+        }
     }
 }
