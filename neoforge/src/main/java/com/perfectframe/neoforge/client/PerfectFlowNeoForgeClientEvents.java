@@ -12,10 +12,10 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.event.TickEvent;
 
 @Mod.EventBusSubscriber(modid = Constants.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public final class PerfectFrameNeoForgeClientEvents {
+public final class PerfectFlowNeoForgeClientEvents {
     private static boolean announcedClientLoad;
 
-    private PerfectFrameNeoForgeClientEvents() {
+    private PerfectFlowNeoForgeClientEvents() {
     }
 
     @SubscribeEvent
@@ -33,7 +33,7 @@ public final class PerfectFrameNeoForgeClientEvents {
             }
         }
 
-        while (PerfectFrameNeoForgeClientBindings.consumeToggleClick()) {
+        while (PerfectFlowNeoForgeClientBindings.consumeToggleClick()) {
             CaptureClientHooks.requestToggle();
         }
     }

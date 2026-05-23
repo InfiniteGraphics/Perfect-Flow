@@ -6,6 +6,7 @@ import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
@@ -18,9 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.lang.reflect.Type;
 
-public class PerfectFrameConfig {
+public class PerfectFlowConfig {
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(FfmpegMode.class, new FfmpegModeAdapter())
+            .registerTypeAdapter(Sync.class, new SyncAdapter())
             .setPrettyPrinting()
             .create();
     private static final String FILE_NAME = Constants.MOD_ID + ".json";
@@ -33,13 +35,13 @@ public class PerfectFrameConfig {
     public Shader shader = new Shader();
     public MotionBlur motionBlur = new MotionBlur();
 
-    public static PerfectFrameConfig load(Path configDirectory) {
+    public static PerfectFlowConfig load(Path configDirectory) {
         Path configFile = configDirectory.resolve(FILE_NAME);
         try {
             Files.createDirectories(configDirectory);
             if (Files.exists(configFile)) {
                 try (Reader reader = Files.newBufferedReader(configFile)) {
-                    PerfectFrameConfig loaded = GSON.fromJson(reader, PerfectFrameConfig.class);
+                    PerfectFlowConfig loaded = GSON.fromJson(reader, PerfectFlowConfig.class);
                     if (loaded != null) {
                         boolean changed = loaded.normalize();
                         if (changed) {
@@ -53,7 +55,7 @@ public class PerfectFrameConfig {
             Constants.LOG.warn("Failed to read {}, using defaults", configFile, exception);
         }
 
-        PerfectFrameConfig defaults = new PerfectFrameConfig();
+        PerfectFlowConfig defaults = new PerfectFlowConfig();
         defaults.normalize();
         defaults.save(configDirectory);
         return defaults;
@@ -78,6 +80,10 @@ public class PerfectFrameConfig {
         if (ffmpeg == null) ffmpeg = new Ffmpeg();
         if (shader == null) shader = new Shader();
         if (motionBlur == null) motionBlur = new MotionBlur();
+        if (sync.mode == null) {
+            sync.mode = SyncMode.NORMAL;
+            changed = true;
+        }
         if (ffmpeg.mode == null) {
             ffmpeg.mode = FfmpegMode.CUSTOM_PATH;
             changed = true;
@@ -154,6 +160,10 @@ public class PerfectFrameConfig {
             motionBlur.mode = MotionBlurMode.FRAME_BLEND;
             changed = true;
         }
+        if (motionBlur.path == null) {
+            motionBlur.path = MotionBlurPath.EXPORTER_THREAD;
+            changed = true;
+        }
         double normalizedShutterFraction = Math.max(0.0D, Math.min(1.0D, motionBlur.shutterFraction));
         if (Double.compare(motionBlur.shutterFraction, normalizedShutterFraction) != 0) {
             motionBlur.shutterFraction = normalizedShutterFraction;
@@ -196,7 +206,7 @@ public class PerfectFrameConfig {
     }
 
     public static class Sync {
-        public boolean enabled = true;
+        public SyncMode mode = SyncMode.NORMAL;
         public double engineSpeed = 1.0D;
     }
 
@@ -218,6 +228,7 @@ public class PerfectFrameConfig {
     public static class MotionBlur {
         public boolean enabled = false;
         public MotionBlurMode mode = MotionBlurMode.FRAME_BLEND;
+        public MotionBlurPath path = MotionBlurPath.EXPORTER_THREAD;
         public double shutterFraction = 0.5D;
         public int sampleCount = 4;
         public int blendFrameCount = 4;
@@ -244,6 +255,18 @@ public class PerfectFrameConfig {
         CUSTOM_PATH
     }
 
+    public enum SyncMode {
+        NORMAL,
+        CLIENT_ONLY;
+
+        public String displayName() {
+            return switch (this) {
+                case NORMAL -> "Normal";
+                case CLIENT_ONLY -> "Client Only";
+            };
+        }
+    }
+
     public enum ShaderCaptureMode {
         AUTO,
         VANILLA,
@@ -254,6 +277,11 @@ public class PerfectFrameConfig {
     public enum MotionBlurMode {
         ACCUMULATION,
         FRAME_BLEND
+    }
+
+    public enum MotionBlurPath {
+        EXPORTER_THREAD,
+        FFMPEG_FILTER
     }
 
     private static final class FfmpegModeAdapter implements JsonSerializer<FfmpegMode>, JsonDeserializer<FfmpegMode> {
@@ -276,6 +304,53 @@ public class PerfectFrameConfig {
             } catch (IllegalArgumentException exception) {
                 return FfmpegMode.CUSTOM_PATH;
             }
+        }
+    }
+
+    private static final class SyncAdapter implements JsonSerializer<Sync>, JsonDeserializer<Sync> {
+        @Override
+        public JsonElement serialize(Sync src, Type typeOfSrc, JsonSerializationContext context) {
+            JsonObject object = new JsonObject();
+            SyncMode mode = src == null || src.mode == null ? SyncMode.NORMAL : src.mode;
+            object.addProperty("mode", mode.name());
+            object.addProperty("engineSpeed", src == null ? 1.0D : src.engineSpeed);
+            return object;
+        }
+
+        @Override
+        public Sync deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            Sync sync = new Sync();
+            if (json == null || json.isJsonNull()) {
+                return sync;
+            }
+            if (json.isJsonPrimitive()) {
+                JsonPrimitive primitive = json.getAsJsonPrimitive();
+                if (primitive.isBoolean()) {
+                    sync.mode = primitive.getAsBoolean() ? SyncMode.NORMAL : SyncMode.CLIENT_ONLY;
+                }
+                return sync;
+            }
+            if (!json.isJsonObject()) {
+                return sync;
+            }
+            JsonObject object = json.getAsJsonObject();
+            if (object.has("mode")) {
+                try {
+                    sync.mode = SyncMode.valueOf(object.get("mode").getAsString());
+                } catch (Exception ignored) {
+                    sync.mode = SyncMode.NORMAL;
+                }
+            } else if (object.has("enabled")) {
+                sync.mode = object.get("enabled").getAsBoolean() ? SyncMode.NORMAL : SyncMode.CLIENT_ONLY;
+            }
+            if (object.has("engineSpeed")) {
+                try {
+                    sync.engineSpeed = object.get("engineSpeed").getAsDouble();
+                } catch (Exception ignored) {
+                    sync.engineSpeed = 1.0D;
+                }
+            }
+            return sync;
         }
     }
 }

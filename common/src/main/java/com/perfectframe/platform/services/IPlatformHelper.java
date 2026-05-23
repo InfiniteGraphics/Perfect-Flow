@@ -1,6 +1,6 @@
 package com.perfectframe.platform.services;
 
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.shader.CaptureSource;
 
 import java.nio.file.Path;
@@ -16,7 +16,7 @@ public interface IPlatformHelper {
 
     ClientAccess clientAccess();
 
-    default PerfectFrameConfig.ShaderCaptureMode normalizeShaderCaptureMode(PerfectFrameConfig.ShaderCaptureMode mode) {
+    default PerfectFlowConfig.ShaderCaptureMode normalizeShaderCaptureMode(PerfectFlowConfig.ShaderCaptureMode mode) {
         return mode;
     }
 

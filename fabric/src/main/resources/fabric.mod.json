@@ -16,10 +16,10 @@
     "environment": "client",
     "entrypoints": {
         "client": [
-            "com.perfectframe.fabric.PerfectFrameFabric"
+            "com.perfectframe.fabric.PerfectFlowFabric"
         ],
         "modmenu": [
-            "com.perfectframe.fabric.config.PerfectFrameModMenu"
+            "com.perfectframe.fabric.config.PerfectFlowModMenu"
         ]
     },
     "mixins": [

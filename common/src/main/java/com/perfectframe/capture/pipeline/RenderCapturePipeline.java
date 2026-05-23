@@ -9,71 +9,74 @@ import com.perfectframe.shader.CaptureSource;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL21;
+import org.lwjgl.opengl.GL32;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 
 public final class RenderCapturePipeline {
-    private ByteBuffer reusableBgraBuffer;
     private FloatBuffer reusableDepthFloatBuffer;
     private final DirectByteBufferPool framePool = new DirectByteBufferPool();
-    private ByteBuffer[] frameBlendBuffers = new ByteBuffer[0];
-    private int frameBlendBufferWidth = -1;
-    private int frameBlendBufferHeight = -1;
-    private int frameBlendStart;
-    private int frameBlendCount;
+    private final PboReadbackRing pboReadbackRing = new PboReadbackRing();
+    private CaptureSession activeSession;
+    private int activeCaptureWidth = -1;
+    private int activeCaptureHeight = -1;
+    private String activeCaptureSourceId;
 
     public List<CapturedFrame> capture(CaptureSession session, CaptureSource source) {
         PerfectFlowConfig config = session.config();
         int width = source.width();
         int height = source.height();
         session.setCaptureSize(width, height);
+        if (session != activeSession || width != activeCaptureWidth || height != activeCaptureHeight || !Objects.equals(activeCaptureSourceId, source.id())) {
+            activeSession = session;
+            activeCaptureWidth = width;
+            activeCaptureHeight = height;
+            activeCaptureSourceId = source.id();
+            pboReadbackRing.clear();
+        }
         List<CapturedFrame> frames = new ArrayList<>();
 
         boolean needsColor = config.capture.recordColor || config.capture.recordAlpha;
         if (needsColor) {
             ByteBuffer bgra = null;
-            try {
-                if (config.capture.recordAlpha || config.motionBlur.enabled) {
-                    bgra = readColor(source.colorAttachment(), width, height, PixelFormat.BGRA32, reusableBgraBuffer);
-                    reusableBgraBuffer = bgra;
-                }
-
-                if (config.capture.recordColor) {
-                    ByteBuffer colorPixels = borrowFrameBuffer(width, height, PixelFormat.BGR24);
-                    if (config.motionBlur.enabled) {
-                        applyMotionBlur(config, width, height, bgra, colorPixels);
-                    } else if (bgra == null) {
-                        colorPixels = readColor(source.colorAttachment(), width, height, PixelFormat.BGR24, colorPixels);
-                    } else {
-                        extractColorBgr(bgra, width, height, colorPixels);
-                    }
-                    ByteBuffer colorFrame = colorPixels;
-                    frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, PixelFormat.BGR24, colorFrame,
-                            () -> releaseFrameBuffer(width, height, PixelFormat.BGR24, colorFrame)));
-                } else {
-                    clearFrameBlendHistory();
-                }
-
-                if (config.capture.recordAlpha) {
-                    ByteBuffer alphaMask = borrowFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24);
-                    extractAlphaMask(bgra, width, height, alphaMask);
-                    frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask,
-                            () -> releaseFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask)));
-                }
-            } finally {
-                if (!config.capture.recordColor) {
-                    clearFrameBlendHistory();
-                }
+            if (config.capture.recordColor && config.capture.recordAlpha) {
+                bgra = borrowFrameBuffer(width, height, PixelFormat.BGRA32);
+                readColor(source.colorAttachment(), width, height, PixelFormat.BGRA32, bgra);
+            } else if (config.capture.recordAlpha) {
+                bgra = borrowFrameBuffer(width, height, PixelFormat.BGRA32);
+                readColor(source.colorAttachment(), width, height, PixelFormat.BGRA32, bgra);
             }
-        } else {
-            clearFrameBlendHistory();
+
+            if (config.capture.recordColor) {
+                ByteBuffer colorPixels = borrowFrameBuffer(width, height, PixelFormat.BGR24);
+                if (bgra != null) {
+                    extractColorBgr(bgra, width, height, colorPixels);
+                } else {
+                    readColor(source.colorAttachment(), width, height, PixelFormat.BGR24, colorPixels);
+                }
+                ByteBuffer colorFrame = colorPixels;
+                frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, PixelFormat.BGR24, colorFrame,
+                        () -> releaseFrameBuffer(width, height, PixelFormat.BGR24, colorFrame)));
+            }
+
+            if (config.capture.recordAlpha) {
+                ByteBuffer alphaMask = borrowFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24);
+                extractAlphaMask(bgra, width, height, alphaMask);
+                frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask,
+                        () -> releaseFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask)));
+                releaseFrameBuffer(width, height, PixelFormat.BGRA32, bgra);
+            }
         }
 
         if (config.capture.recordDepth) {
@@ -88,27 +91,23 @@ public final class RenderCapturePipeline {
 
     private ByteBuffer readColor(CaptureAttachment attachment, int width, int height, PixelFormat format, ByteBuffer reusableBuffer) {
         int expectedBytes = width * height * format.bytesPerPixel();
+        PboReadbackKey key = PboReadbackKey.bytes(width, height, format.bytesPerPixel());
         ByteBuffer pixels = ensureByteBuffer(reusableBuffer, expectedBytes);
-        pixels.clear();
-        attachment.bindRead();
-        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
-        int glFormat = format == PixelFormat.BGRA32 ? GL12.GL_BGRA : GL12.GL_BGR;
-        GL11.glReadPixels(0, 0, width, height, glFormat, GL11.GL_UNSIGNED_BYTE, pixels);
-        attachment.unbindRead();
-        resetNativeReadBuffer(pixels, expectedBytes);
+        if (!pboReadbackRing.harvestBytes(key, pixels)) {
+            directReadColor(attachment, width, height, format, pixels);
+        }
+        pboReadbackRing.queueBytes(key, () -> readColorIntoPbo(attachment, width, height, format));
         return pixels;
     }
 
     private void readDepth(CaptureAttachment attachment, int width, int height, ByteBuffer output) {
         int expectedPixels = width * height;
         reusableDepthFloatBuffer = ensureFloatBuffer(reusableDepthFloatBuffer, expectedPixels);
-        reusableDepthFloatBuffer.clear();
-        output.clear();
-        attachment.bindRead();
-        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
-        GL11.glReadPixels(0, 0, width, height, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, reusableDepthFloatBuffer);
-        attachment.unbindRead();
-        resetNativeReadBuffer(reusableDepthFloatBuffer, expectedPixels);
+        PboReadbackKey key = PboReadbackKey.floats(width, height);
+        if (!pboReadbackRing.harvestFloats(key, reusableDepthFloatBuffer)) {
+            directReadDepth(attachment, width, height, reusableDepthFloatBuffer);
+        }
+        pboReadbackRing.queueFloats(key, () -> readDepthIntoPbo(attachment, width, height));
         while (reusableDepthFloatBuffer.hasRemaining()) {
             float normalized = mapDepth(reusableDepthFloatBuffer.get());
             byte value = (byte) Math.round(normalized * 255.0F);
@@ -119,97 +118,46 @@ public final class RenderCapturePipeline {
         output.flip();
     }
 
-    private void applyMotionBlur(PerfectFlowConfig config, int width, int height, ByteBuffer bgra, ByteBuffer output) {
-        switch (config.motionBlur.mode) {
-            case FRAME_BLEND -> applyFrameBlend(width, height, bgra, config.motionBlur, output);
-            case ACCUMULATION -> applyAccumulation(width, height, bgra, config.motionBlur, output);
-        }
-    }
-
-    private void applyFrameBlend(int width, int height, ByteBuffer bgra, PerfectFlowConfig.MotionBlur settings, ByteBuffer output) {
-        ByteBuffer currentFrame = obtainFrameBlendSlot(width, height, settings.blendFrameCount);
-        extractColorBgr(bgra, width, height, currentFrame);
-
-        output.clear();
-        int pixels = width * height;
-        double strength = settings.shutterFraction;
-        for (int i = 0; i < pixels; i++) {
-            double totalWeight = 0.0D;
-            double blue = 0.0D;
-            double green = 0.0D;
-            double red = 0.0D;
-            for (int historyIndex = 0; historyIndex < frameBlendCount; historyIndex++) {
-                ByteBuffer history = frameBlendBuffers[(frameBlendStart + historyIndex) % frameBlendBuffers.length];
-                int base = i * 3;
-                double t = frameBlendCount <= 1 ? 0.0D : historyIndex / (double) (frameBlendCount - 1);
-                double weight = 1.0D - strength + (strength * (t + 1.0D / frameBlendCount));
-                totalWeight += weight;
-                blue += Byte.toUnsignedInt(history.get(base)) * weight;
-                green += Byte.toUnsignedInt(history.get(base + 1)) * weight;
-                red += Byte.toUnsignedInt(history.get(base + 2)) * weight;
-            }
-            output.put((byte) Math.round(blue / totalWeight));
-            output.put((byte) Math.round(green / totalWeight));
-            output.put((byte) Math.round(red / totalWeight));
-        }
-        output.flip();
-    }
-
-    private void applyAccumulation(int width, int height, ByteBuffer bgra, PerfectFlowConfig.MotionBlur settings, ByteBuffer output) {
-        verifyReadableBytes("BGRA color buffer", bgra, width * height * PixelFormat.BGRA32.bytesPerPixel());
-        output.clear();
-        int pixels = width * height;
-        int samples = Math.max(1, settings.sampleCount);
-        double shutterWeight = Math.max(0.0D, Math.min(1.0D, settings.shutterFraction));
-        double accumulationFactor = 0.82D + (0.18D * shutterWeight);
-        for (int i = 0; i < pixels; i++) {
-            int base = i * 4;
-            int blue = (int) Math.round((Byte.toUnsignedInt(bgra.get(base)) * accumulationFactor * samples) / samples);
-            int green = (int) Math.round((Byte.toUnsignedInt(bgra.get(base + 1)) * accumulationFactor * samples) / samples);
-            int red = (int) Math.round((Byte.toUnsignedInt(bgra.get(base + 2)) * accumulationFactor * samples) / samples);
-            output.put((byte) Math.max(0, Math.min(255, blue)));
-            output.put((byte) Math.max(0, Math.min(255, green)));
-            output.put((byte) Math.max(0, Math.min(255, red)));
-        }
-        output.flip();
-    }
-
-    private ByteBuffer obtainFrameBlendSlot(int width, int height, int blendFrameCount) {
-        int capacity = Math.max(1, blendFrameCount);
-        if (frameBlendBuffers.length != capacity || frameBlendBufferWidth != width || frameBlendBufferHeight != height) {
-            frameBlendBuffers = new ByteBuffer[capacity];
-            frameBlendBufferWidth = width;
-            frameBlendBufferHeight = height;
-            frameBlendStart = 0;
-            frameBlendCount = 0;
-        }
-
-        int slotIndex;
-        if (frameBlendCount < frameBlendBuffers.length) {
-            slotIndex = (frameBlendStart + frameBlendCount) % frameBlendBuffers.length;
-            frameBlendCount++;
-        } else {
-            slotIndex = frameBlendStart;
-            frameBlendStart = (frameBlendStart + 1) % frameBlendBuffers.length;
-        }
-
-        ByteBuffer slot = ensureByteBuffer(frameBlendBuffers[slotIndex], width * height * PixelFormat.BGR24.bytesPerPixel());
-        frameBlendBuffers[slotIndex] = slot;
-        slot.clear();
-        return slot;
-    }
-
-    private void clearFrameBlendHistory() {
-        frameBlendStart = 0;
-        frameBlendCount = 0;
-    }
-
     private ByteBuffer borrowFrameBuffer(int width, int height, PixelFormat format) {
         return framePool.borrow(width, height, format);
     }
 
     private void releaseFrameBuffer(int width, int height, PixelFormat format, ByteBuffer buffer) {
         framePool.release(width, height, format, buffer);
+    }
+
+    private void directReadColor(CaptureAttachment attachment, int width, int height, PixelFormat format, ByteBuffer output) {
+        output.clear();
+        attachment.bindRead();
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+        int glFormat = format == PixelFormat.BGRA32 ? GL12.GL_BGRA : GL12.GL_BGR;
+        GL11.glReadPixels(0, 0, width, height, glFormat, GL11.GL_UNSIGNED_BYTE, output);
+        attachment.unbindRead();
+        resetNativeReadBuffer(output, width * height * format.bytesPerPixel());
+    }
+
+    private void readColorIntoPbo(CaptureAttachment attachment, int width, int height, PixelFormat format) {
+        attachment.bindRead();
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+        int glFormat = format == PixelFormat.BGRA32 ? GL12.GL_BGRA : GL12.GL_BGR;
+        GL11.glReadPixels(0, 0, width, height, glFormat, GL11.GL_UNSIGNED_BYTE, 0L);
+        attachment.unbindRead();
+    }
+
+    private void directReadDepth(CaptureAttachment attachment, int width, int height, FloatBuffer output) {
+        output.clear();
+        attachment.bindRead();
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, output);
+        attachment.unbindRead();
+        resetNativeReadBuffer(output, width * height);
+    }
+
+    private void readDepthIntoPbo(CaptureAttachment attachment, int width, int height) {
+        attachment.bindRead();
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, 0L);
+        attachment.unbindRead();
     }
 
     private void extractColorBgr(ByteBuffer bgra, int width, int height, ByteBuffer target) {
@@ -309,5 +257,229 @@ public final class RenderCapturePipeline {
         int capacityBytes() {
             return width * height * format.bytesPerPixel();
         }
+    }
+
+    private static final class PboReadbackRing {
+        private static final int SLOT_COUNT = 4;
+        private static final long SHORT_WAIT_NANOS = TimeUnit.MILLISECONDS.toNanos(1L);
+
+        private final Map<PboReadbackKey, State> states = new HashMap<>();
+
+        boolean harvestBytes(PboReadbackKey key, ByteBuffer target) {
+            return harvestBytesInternal(key, target);
+        }
+
+        boolean harvestFloats(PboReadbackKey key, FloatBuffer target) {
+            return harvestFloatsInternal(key, target);
+        }
+
+        boolean queueBytes(PboReadbackKey key, Runnable writer) {
+            return queue(key, writer);
+        }
+
+        boolean queueFloats(PboReadbackKey key, Runnable writer) {
+            return queue(key, writer);
+        }
+
+        void clear() {
+            for (State state : states.values()) {
+                state.destroy();
+            }
+            states.clear();
+        }
+
+        private boolean harvestBytesInternal(PboReadbackKey key, ByteBuffer target) {
+            State state = states.get(key);
+            if (state == null || state.pendingCount == 0 || state.failed) {
+                return false;
+            }
+            int previousBinding = GL11.glGetInteger(GL21.GL_PIXEL_PACK_BUFFER_BINDING);
+            try {
+                while (state.pendingCount > 0) {
+                    int slot = state.readIndex;
+                    long fence = state.fences[slot];
+                    if (fence == 0L) {
+                        return false;
+                    }
+                    int waitResult = GL32.glClientWaitSync(fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 0L);
+                    if (waitResult == GL32.GL_TIMEOUT_EXPIRED) {
+                        return false;
+                    }
+                    if (waitResult == GL32.GL_WAIT_FAILED) {
+                        state.failed = true;
+                        state.destroy();
+                        states.remove(key);
+                        return false;
+                    }
+
+                    GL32.glDeleteSync(fence);
+                    state.fences[slot] = 0L;
+                    state.readIndex = (slot + 1) % SLOT_COUNT;
+                    state.pendingCount--;
+                    if (state.warmupDiscardRemaining > 0) {
+                        state.warmupDiscardRemaining--;
+                        continue;
+                    }
+
+                    GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, state.pbos[slot]);
+                    target.clear();
+                    GL15.glGetBufferSubData(GL21.GL_PIXEL_PACK_BUFFER, 0L, target);
+                    resetNativeReadBuffer(target, key.sizeBytes());
+                    return true;
+                }
+                return false;
+            } finally {
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, previousBinding);
+            }
+        }
+
+        private boolean harvestFloatsInternal(PboReadbackKey key, FloatBuffer target) {
+            State state = states.get(key);
+            if (state == null || state.pendingCount == 0 || state.failed) {
+                return false;
+            }
+            int previousBinding = GL11.glGetInteger(GL21.GL_PIXEL_PACK_BUFFER_BINDING);
+            try {
+                while (state.pendingCount > 0) {
+                    int slot = state.readIndex;
+                    long fence = state.fences[slot];
+                    if (fence == 0L) {
+                        return false;
+                    }
+                    int waitResult = GL32.glClientWaitSync(fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, 0L);
+                    if (waitResult == GL32.GL_TIMEOUT_EXPIRED) {
+                        return false;
+                    }
+                    if (waitResult == GL32.GL_WAIT_FAILED) {
+                        state.failed = true;
+                        state.destroy();
+                        states.remove(key);
+                        return false;
+                    }
+
+                    GL32.glDeleteSync(fence);
+                    state.fences[slot] = 0L;
+                    state.readIndex = (slot + 1) % SLOT_COUNT;
+                    state.pendingCount--;
+                    if (state.warmupDiscardRemaining > 0) {
+                        state.warmupDiscardRemaining--;
+                        continue;
+                    }
+
+                    GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, state.pbos[slot]);
+                    target.clear();
+                    GL15.glGetBufferSubData(GL21.GL_PIXEL_PACK_BUFFER, 0L, target);
+                    resetNativeReadBuffer(target, key.sizeBytes() / Float.BYTES);
+                    return true;
+                }
+                return false;
+            } finally {
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, previousBinding);
+            }
+        }
+
+        private boolean queue(PboReadbackKey key, Runnable writer) {
+            State state = states.computeIfAbsent(key, ignored -> new State(key));
+            if (state.failed) {
+                return false;
+            }
+            if (state.pendingCount >= SLOT_COUNT) {
+                int oldestSlot = state.readIndex;
+                long fence = state.fences[oldestSlot];
+                if (fence == 0L) {
+                    return false;
+                }
+                int waitResult = GL32.glClientWaitSync(fence, GL32.GL_SYNC_FLUSH_COMMANDS_BIT, SHORT_WAIT_NANOS);
+                if (waitResult == GL32.GL_WAIT_FAILED) {
+                    state.failed = true;
+                    state.destroy();
+                    states.remove(key);
+                    return false;
+                }
+                if (waitResult == GL32.GL_TIMEOUT_EXPIRED) {
+                    return false;
+                }
+                GL32.glDeleteSync(fence);
+                state.fences[oldestSlot] = 0L;
+                state.readIndex = (oldestSlot + 1) % SLOT_COUNT;
+                state.pendingCount--;
+            }
+
+            int slot = state.writeIndex;
+            int previousBinding = GL11.glGetInteger(GL21.GL_PIXEL_PACK_BUFFER_BINDING);
+            try {
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, state.pbos[slot]);
+                GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, key.sizeBytes(), GL15.GL_STREAM_READ);
+                writer.run();
+                long sync = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+                if (state.fences[slot] != 0L) {
+                    GL32.glDeleteSync(state.fences[slot]);
+                }
+                state.fences[slot] = sync;
+                state.writeIndex = (slot + 1) % SLOT_COUNT;
+                state.pendingCount++;
+                return true;
+            } finally {
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, previousBinding);
+            }
+        }
+
+        private static final class State {
+            private final PboReadbackKey key;
+            private final int[] pbos = new int[SLOT_COUNT];
+            private final long[] fences = new long[SLOT_COUNT];
+            private int readIndex;
+            private int writeIndex;
+            private int pendingCount;
+            private int warmupDiscardRemaining = SLOT_COUNT - 1;
+            private boolean failed;
+
+            private State(PboReadbackKey key) {
+                this.key = key;
+                int previousBinding = GL11.glGetInteger(GL21.GL_PIXEL_PACK_BUFFER_BINDING);
+                for (int i = 0; i < SLOT_COUNT; i++) {
+                    pbos[i] = GL15.glGenBuffers();
+                    GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, pbos[i]);
+                    GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, key.sizeBytes(), GL15.GL_STREAM_READ);
+                }
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, previousBinding);
+            }
+
+            private void destroy() {
+                for (int i = 0; i < SLOT_COUNT; i++) {
+                    if (fences[i] != 0L) {
+                        GL32.glDeleteSync(fences[i]);
+                        fences[i] = 0L;
+                    }
+                    if (pbos[i] != 0) {
+                        GL15.glDeleteBuffers(pbos[i]);
+                        pbos[i] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    private record PboReadbackKey(int width, int height, int bytesPerElement, ReadbackKind kind) {
+        private PboReadbackKey {
+            Objects.requireNonNull(kind, "kind");
+        }
+
+        static PboReadbackKey bytes(int width, int height, int bytesPerElement) {
+            return new PboReadbackKey(width, height, bytesPerElement, ReadbackKind.BYTES);
+        }
+
+        static PboReadbackKey floats(int width, int height) {
+            return new PboReadbackKey(width, height, Float.BYTES, ReadbackKind.FLOATS);
+        }
+
+        int sizeBytes() {
+            return width * height * bytesPerElement;
+        }
+    }
+
+    private enum ReadbackKind {
+        BYTES,
+        FLOATS
     }
 }

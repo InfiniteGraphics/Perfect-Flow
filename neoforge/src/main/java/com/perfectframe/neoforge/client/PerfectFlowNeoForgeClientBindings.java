@@ -10,7 +10,7 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import org.lwjgl.glfw.GLFW;
 
 @Mod.EventBusSubscriber(modid = Constants.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
-public final class PerfectFrameNeoForgeClientBindings {
+public final class PerfectFlowNeoForgeClientBindings {
     private static final KeyMapping TOGGLE_RECORDING = new KeyMapping(
             "key.perfectflow.toggle_recording",
             InputConstants.Type.KEYSYM,
@@ -18,7 +18,7 @@ public final class PerfectFrameNeoForgeClientBindings {
             "key.categories.perfectflow"
     );
 
-    private PerfectFrameNeoForgeClientBindings() {
+    private PerfectFlowNeoForgeClientBindings() {
     }
 
     @SubscribeEvent

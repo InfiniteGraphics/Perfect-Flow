@@ -1,7 +1,7 @@
 package com.perfectframe.fabric.config;
 
 import com.perfectframe.CommonClass;
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.platform.Services;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
@@ -10,11 +10,11 @@ import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import net.minecraft.text.Text;
 
-public final class PerfectFrameModMenu implements ModMenuApi {
+public final class PerfectFlowModMenu implements ModMenuApi {
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return parent -> {
-            PerfectFrameConfig config = CommonClass.config();
+            PerfectFlowConfig config = CommonClass.config();
             ConfigBuilder builder = ConfigBuilder.create()
                     .setParentScreen(parent)
                     .setTitle(Text.literal("PerfectFlow"));
@@ -30,8 +30,8 @@ public final class PerfectFrameModMenu implements ModMenuApi {
                     .setDefaultValue("perfectflow_captures")
                     .setSaveConsumer(value -> config.capture.outputPath = value)
                     .build());
-            capture.addEntry(entries.startEnumSelector(Text.literal("Resolution mode"), PerfectFrameConfig.ResolutionMode.class, config.capture.resolutionMode)
-                    .setDefaultValue(PerfectFrameConfig.ResolutionMode.NATIVE)
+            capture.addEntry(entries.startEnumSelector(Text.literal("Resolution mode"), PerfectFlowConfig.ResolutionMode.class, config.capture.resolutionMode)
+                    .setDefaultValue(PerfectFlowConfig.ResolutionMode.NATIVE)
                     .setSaveConsumer(value -> config.capture.resolutionMode = value)
                     .build());
             capture.addEntry(entries.startDoubleField(Text.literal("Resolution scale"), config.capture.resolutionScale)
@@ -69,9 +69,14 @@ public final class PerfectFrameModMenu implements ModMenuApi {
                     .setDefaultValue(false)
                     .setSaveConsumer(value -> config.motionBlur.enabled = value)
                     .build());
-            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Mode"), PerfectFrameConfig.MotionBlurMode.class, config.motionBlur.mode)
-                    .setDefaultValue(PerfectFrameConfig.MotionBlurMode.FRAME_BLEND)
+            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Mode"), PerfectFlowConfig.MotionBlurMode.class, config.motionBlur.mode)
+                    .setDefaultValue(PerfectFlowConfig.MotionBlurMode.FRAME_BLEND)
                     .setSaveConsumer(value -> config.motionBlur.mode = value)
+                    .build());
+            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Processing path"), FabricMotionBlurPath.class, FabricMotionBlurPath.from(config.motionBlur.path))
+                    .setDefaultValue(FabricMotionBlurPath.EXPORTER_THREAD)
+                    .setTooltip(Text.literal("FFmpeg filter mode only affects MP4 output. Exporter thread mode keeps the current behavior."))
+                    .setSaveConsumer(value -> config.motionBlur.path = value.toConfigPath())
                     .build());
             motionBlur.addEntry(entries.startDoubleField(Text.literal("Shutter fraction"), config.motionBlur.shutterFraction)
                     .setMin(0.0D)
@@ -98,9 +103,10 @@ public final class PerfectFrameModMenu implements ModMenuApi {
                     .setSaveConsumer(value -> config.shader.captureMode = value.toConfigMode())
                     .build());
             ConfigCategory sync = builder.getOrCreateCategory(Text.literal("Sync"));
-            sync.addEntry(entries.startBooleanToggle(Text.literal("Enable sync"), config.sync.enabled)
-                    .setDefaultValue(true)
-                    .setSaveConsumer(value -> config.sync.enabled = value)
+            sync.addEntry(entries.startEnumSelector(Text.literal("Sync mode"), FabricSyncMode.class, FabricSyncMode.from(config.sync.mode))
+                    .setDefaultValue(FabricSyncMode.NORMAL)
+                    .setTooltip(Text.literal("Normal uses the stronger singleplayer sync path and automatically downgrades to Client Only in multiplayer."))
+                    .setSaveConsumer(value -> config.sync.mode = value.toConfigMode())
                     .build());
             sync.addEntry(entries.startDoubleField(Text.literal("Engine speed"), config.sync.engineSpeed)
                     .setMin(0.01D)
@@ -113,8 +119,8 @@ public final class PerfectFrameModMenu implements ModMenuApi {
                     .setDefaultValue("")
                     .setSaveConsumer(value -> config.ffmpeg.customPath = value)
                     .build());
-            ffmpeg.addEntry(entries.startEnumSelector(Text.literal("Quality preset"), PerfectFrameConfig.QualityPreset.class, config.ffmpeg.qualityPreset)
-                    .setDefaultValue(PerfectFrameConfig.QualityPreset.BALANCED)
+            ffmpeg.addEntry(entries.startEnumSelector(Text.literal("Quality preset"), PerfectFlowConfig.QualityPreset.class, config.ffmpeg.qualityPreset)
+                    .setDefaultValue(PerfectFlowConfig.QualityPreset.BALANCED)
                     .setSaveConsumer(value -> config.ffmpeg.qualityPreset = value)
                     .build());
             ffmpeg.addEntry(entries.startIntField(Text.literal("Video bitrate kbps"), config.ffmpeg.videoBitrateKbps)
@@ -153,7 +159,7 @@ public final class PerfectFrameModMenu implements ModMenuApi {
         VANILLA,
         IRIS;
 
-        private static FabricShaderCaptureMode from(PerfectFrameConfig.ShaderCaptureMode mode) {
+        private static FabricShaderCaptureMode from(PerfectFlowConfig.ShaderCaptureMode mode) {
             return switch (mode) {
                 case VANILLA -> VANILLA;
                 case IRIS, OCULUS -> IRIS;
@@ -161,12 +167,40 @@ public final class PerfectFrameModMenu implements ModMenuApi {
             };
         }
 
-        private PerfectFrameConfig.ShaderCaptureMode toConfigMode() {
+        private PerfectFlowConfig.ShaderCaptureMode toConfigMode() {
             return switch (this) {
-                case AUTO -> PerfectFrameConfig.ShaderCaptureMode.AUTO;
-                case VANILLA -> PerfectFrameConfig.ShaderCaptureMode.VANILLA;
-                case IRIS -> PerfectFrameConfig.ShaderCaptureMode.IRIS;
+                case AUTO -> PerfectFlowConfig.ShaderCaptureMode.AUTO;
+                case VANILLA -> PerfectFlowConfig.ShaderCaptureMode.VANILLA;
+                case IRIS -> PerfectFlowConfig.ShaderCaptureMode.IRIS;
             };
+        }
+    }
+
+    private enum FabricMotionBlurPath {
+        EXPORTER_THREAD,
+        FFMPEG_FILTER;
+
+        private static FabricMotionBlurPath from(PerfectFlowConfig.MotionBlurPath path) {
+            return path == PerfectFlowConfig.MotionBlurPath.FFMPEG_FILTER ? FFMPEG_FILTER : EXPORTER_THREAD;
+        }
+
+        private PerfectFlowConfig.MotionBlurPath toConfigPath() {
+            return this == FFMPEG_FILTER
+                    ? PerfectFlowConfig.MotionBlurPath.FFMPEG_FILTER
+                    : PerfectFlowConfig.MotionBlurPath.EXPORTER_THREAD;
+        }
+    }
+
+    private enum FabricSyncMode {
+        NORMAL,
+        CLIENT_ONLY;
+
+        private static FabricSyncMode from(PerfectFlowConfig.SyncMode mode) {
+            return mode == PerfectFlowConfig.SyncMode.CLIENT_ONLY ? CLIENT_ONLY : NORMAL;
+        }
+
+        private PerfectFlowConfig.SyncMode toConfigMode() {
+            return this == CLIENT_ONLY ? PerfectFlowConfig.SyncMode.CLIENT_ONLY : PerfectFlowConfig.SyncMode.NORMAL;
         }
     }
 }

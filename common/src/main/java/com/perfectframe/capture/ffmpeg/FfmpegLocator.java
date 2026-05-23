@@ -1,6 +1,6 @@
 package com.perfectframe.capture.ffmpeg;
 
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -10,7 +10,7 @@ public final class FfmpegLocator {
     private FfmpegLocator() {
     }
 
-    public static Path locate(PerfectFrameConfig config) {
+    public static Path locate(PerfectFlowConfig config) {
         String configuredPath = normalizeConfiguredPath(config.ffmpeg.customPath);
         if (configuredPath.isEmpty()) {
             throw new IllegalStateException("FFmpeg executable path is not configured. Set ffmpeg.customPath to the full path of ffmpeg.exe.");

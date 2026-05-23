@@ -28,6 +28,11 @@ public final class NeoForgeClientAccess implements ClientAccess {
     }
 
     @Override
+    public boolean isSingleplayerWorld() {
+        return Minecraft.getInstance().getSingleplayerServer() != null;
+    }
+
+    @Override
     public List<CapturedFrame> captureFrames(CaptureSession session, CaptureSource source) {
         return capturePipeline.capture(session, source);
     }

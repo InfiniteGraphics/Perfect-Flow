@@ -1,6 +1,6 @@
 package com.perfectframe.capture;
 
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -9,10 +9,12 @@ import java.time.format.DateTimeFormatter;
 public final class CaptureSession {
     private static final DateTimeFormatter NAME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
-    private final PerfectFrameConfig config;
+    private final PerfectFlowConfig config;
     private final Path outputDirectory;
     private final String name;
     private final FrameScheduler scheduler;
+    private final PerfectFlowConfig.SyncMode requestedSyncMode;
+    private PerfectFlowConfig.SyncMode effectiveSyncMode;
     private int captureWidth;
     private int captureHeight;
     private int outputWidth;
@@ -21,14 +23,17 @@ public final class CaptureSession {
     private int exporterQueueCapacity;
     private long capturedFrames;
 
-    public CaptureSession(PerfectFrameConfig config, Path outputDirectory) {
+    public CaptureSession(PerfectFlowConfig config, Path outputDirectory) {
         this.config = config;
         this.outputDirectory = outputDirectory;
         this.name = LocalDateTime.now().format(NAME_FORMAT);
         this.scheduler = new FrameScheduler(config.capture.fps, config.sync.engineSpeed);
+        this.requestedSyncMode = config.sync.mode;
+        this.effectiveSyncMode = config.sync.mode;
+        this.scheduler.begin();
     }
 
-    public PerfectFrameConfig config() {
+    public PerfectFlowConfig config() {
         return config;
     }
 
@@ -42,6 +47,23 @@ public final class CaptureSession {
 
     public FrameScheduler scheduler() {
         return scheduler;
+    }
+
+    public PerfectFlowConfig.SyncMode requestedSyncMode() {
+        return requestedSyncMode;
+    }
+
+    public PerfectFlowConfig.SyncMode effectiveSyncMode() {
+        return effectiveSyncMode;
+    }
+
+    public boolean syncDowngraded() {
+        return requestedSyncMode == PerfectFlowConfig.SyncMode.NORMAL
+                && effectiveSyncMode == PerfectFlowConfig.SyncMode.CLIENT_ONLY;
+    }
+
+    public void setEffectiveSyncMode(PerfectFlowConfig.SyncMode effectiveSyncMode) {
+        this.effectiveSyncMode = effectiveSyncMode == null ? PerfectFlowConfig.SyncMode.CLIENT_ONLY : effectiveSyncMode;
     }
 
     public long capturedFrames() {

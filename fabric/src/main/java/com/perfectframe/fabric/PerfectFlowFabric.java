@@ -9,7 +9,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
-public final class PerfectFrameFabric implements ClientModInitializer {
+public final class PerfectFlowFabric implements ClientModInitializer {
     private static KeyBinding toggleRecording;
 
     @Override

@@ -25,6 +25,12 @@ public final class FabricClientAccess implements ClientAccess {
     }
 
     @Override
+    public boolean isSingleplayerWorld() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client.getServer() != null;
+    }
+
+    @Override
     public List<CapturedFrame> captureFrames(CaptureSession session, CaptureSource source) {
         return capturePipeline.capture(session, source);
     }

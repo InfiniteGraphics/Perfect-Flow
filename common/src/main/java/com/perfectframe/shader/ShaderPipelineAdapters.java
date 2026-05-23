@@ -1,6 +1,6 @@
 package com.perfectframe.shader;
 
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.platform.Services;
 
 import java.util.List;
@@ -13,8 +13,8 @@ public final class ShaderPipelineAdapters {
     private ShaderPipelineAdapters() {
     }
 
-    public static ShaderPipelineAdapter select(PerfectFrameConfig config) {
-        PerfectFrameConfig.ShaderCaptureMode mode = Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode);
+    public static ShaderPipelineAdapter select(PerfectFlowConfig config) {
+        PerfectFlowConfig.ShaderCaptureMode mode = Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode);
         return switch (mode) {
             case VANILLA -> VANILLA;
             case IRIS -> IRIS;

@@ -8,11 +8,11 @@ The first development target is Minecraft 1.20.4 with Fabric and NeoForge builds
 - `fabric`: Fabric client entrypoint, key binding, HUD/render hooks, Mod Menu and Cloth Config integration.
 - `neoforge`: NeoForge client entrypoint, key binding, HUD/render hooks, and Oculus detection hook.
 
-<!-- See [PERFECT_FRAME_TECHNICAL_PRD.md](PERFECT_FRAME_TECHNICAL_PRD.md) for the implementation document. -->
+<!-- See [PERFECT_FLOW_TECHNICAL_PRD.md](PERFECT_FLOW_TECHNICAL_PRD.md) for the implementation document. -->
 
 ## Current Status
 
-The repository now exposes the mod publicly as `perfectflow` / `PerfectFlow` while keeping the internal Java package under `com.perfectframe` for now.
+The repository now exposes the mod publicly as `perfectflow` / `PerfectFlow`.
 
 - `U` toggles recording.
 - The right-side recording HUD is drawn after capture hooks so it is not intended to enter output frames.

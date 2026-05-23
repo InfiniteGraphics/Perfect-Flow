@@ -1,29 +1,39 @@
-# eclipse
-bin
-*.launch
-.settings
-.metadata
-.classpath
-.project
-
-# idea
-out
+# IDE and editor files
+.idea/
+.vscode/
+*.iml
 *.ipr
 *.iws
-*.iml
-.idea/*
-!.idea/scopes
+.classpath
+.project
+.settings/
+.metadata/
+*.launch
+/launch.json
+/modules/
+/runConfigurations/
 
-# gradle
-build
-.gradle
+# Gradle and build outputs
+.gradle/
+build/
+/reports/
+/wrapper/
+/.gradle-user-home/
+/.gradle-user-home*/
+/gradle-user-home*/
+/codex-javac/
 
-# other
-eclipse
-run
-runs
+# Logs and local temp files
+*.log
+*.lck
+.codex-dev-stdout.log
+.codex-dev-stderr.log
 
-#
-.vscode/*
+# Legacy Eclipse outputs
+bin/
+eclipse/
+run/
+runs/
 
+# Project notes
 # *PRD.md

@@ -29,6 +29,7 @@ public enum CaptureController {
     private int captureSourceWidth = -1;
     private int captureSourceHeight = -1;
     private boolean keyToggleQueued;
+    private boolean syncDowngradeNotified;
 
     public void configure(PerfectFlowConfig config) {
         this.config = config;
@@ -77,6 +78,8 @@ public enum CaptureController {
                 notifyClient(Constants.MOD_NAME + ": OCULUS mode maps to IRIS on Fabric 1.20.4.");
             }
             exporters.clear();
+            syncDowngradeNotified = false;
+            session.setEffectiveSyncMode(config.sync.mode);
             state = CaptureState.RECORDING;
             Constants.LOG.info("{} capture source: {}", Constants.MOD_NAME, captureSource.label());
             notifyClient(Constants.MOD_NAME + " recording started (" + captureSource.label() + ").");
@@ -101,6 +104,16 @@ public enum CaptureController {
             if (!Services.PLATFORM.clientAccess().isWorldReady()) {
                 return;
             }
+            PerfectFlowConfig.SyncMode effectiveSyncMode = resolveSyncMode();
+            session.setEffectiveSyncMode(effectiveSyncMode);
+            if (effectiveSyncMode == PerfectFlowConfig.SyncMode.CLIENT_ONLY
+                    && config.sync.mode == PerfectFlowConfig.SyncMode.NORMAL
+                    && !syncDowngradeNotified
+                    && !Services.PLATFORM.clientAccess().isSingleplayerWorld()) {
+                syncDowngradeNotified = true;
+                notifyClient(Constants.MOD_NAME + ": sync mode downgraded to Client Only in multiplayer.");
+            }
+            session.scheduler().awaitFrameWindow(effectiveSyncMode == PerfectFlowConfig.SyncMode.NORMAL);
             CaptureSource activeSource = resolveCaptureSource(false);
             List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, activeSource);
             for (CapturedFrame frame : frames) {
@@ -133,8 +146,21 @@ public enum CaptureController {
         closeExporters();
         session = null;
         clearCaptureSource();
+        syncDowngradeNotified = false;
         state = CaptureState.IDLE;
         notifyClient(Constants.MOD_NAME + " recording stopped (" + frames + " frames).");
+    }
+
+    private PerfectFlowConfig.SyncMode resolveSyncMode() {
+        if (config.sync.mode != PerfectFlowConfig.SyncMode.NORMAL) {
+            return PerfectFlowConfig.SyncMode.CLIENT_ONLY;
+        }
+        if (!Services.PLATFORM.clientAccess().isWorldReady()) {
+            return PerfectFlowConfig.SyncMode.NORMAL;
+        }
+        return Services.PLATFORM.clientAccess().isSingleplayerWorld()
+                ? PerfectFlowConfig.SyncMode.NORMAL
+                : PerfectFlowConfig.SyncMode.CLIENT_ONLY;
     }
 
     private CaptureSource resolveCaptureSource(boolean forceRefresh) {
@@ -144,6 +170,9 @@ public enum CaptureController {
         if (forceRefresh || shouldRefreshCaptureSource()) {
             CaptureSource resolved = shaderAdapter.resolve();
             validateCaptureSource(resolved);
+            if (captureSource != null) {
+                captureSource.destroy();
+            }
             captureSource = resolved;
             captureSourceWidth = resolved.width();
             captureSourceHeight = resolved.height();
@@ -172,6 +201,9 @@ public enum CaptureController {
     }
 
     private void clearCaptureSource() {
+        if (captureSource != null) {
+            captureSource.destroy();
+        }
         captureSource = null;
         captureSourceWidth = -1;
         captureSourceHeight = -1;

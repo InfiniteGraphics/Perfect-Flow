@@ -1,7 +1,7 @@
 package com.perfectframe.fabric.mixin;
 
 import com.perfectframe.capture.CaptureClientHooks;
-import com.perfectframe.fabric.PerfectFrameFabric;
+import com.perfectframe.fabric.PerfectFlowFabric;
 import net.minecraft.client.MinecraftClient;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinMinecraftClient {
     @Inject(method = "tick", at = @At("TAIL"))
     private void perfectframe$afterClientTick(CallbackInfo info) {
-        if (PerfectFrameFabric.toggleRecording() != null) {
-            while (PerfectFrameFabric.toggleRecording().wasPressed()) {
+        if (PerfectFlowFabric.toggleRecording() != null) {
+            while (PerfectFlowFabric.toggleRecording().wasPressed()) {
                 CaptureClientHooks.requestToggle();
             }
         }

@@ -22,7 +22,11 @@ public final class NeoForgeRecordingHud {
         String queue = session.exporterQueueCapacity() > 0
                 ? " q" + session.exporterQueueDepth() + "/" + session.exporterQueueCapacity()
                 : "";
-        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps" + size + queue;
+        String sync = session.effectiveSyncMode().displayName();
+        if (session.syncDowngraded()) {
+            sync = sync + "*";
+        }
+        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + size + queue;
         int width = minecraft.font.width(text);
         int x = minecraft.getWindow().getGuiScaledWidth() - width - 10;
         int y = 10;

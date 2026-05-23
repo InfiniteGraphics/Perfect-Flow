@@ -1,6 +1,6 @@
 package com.perfectframe.fabric.platform;
 
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.fabric.shader.IrisCaptureBridge;
 import com.perfectframe.platform.services.ClientAccess;
 import com.perfectframe.platform.services.IPlatformHelper;
@@ -40,8 +40,8 @@ public final class FabricPlatformHelper implements IPlatformHelper {
     }
 
     @Override
-    public PerfectFrameConfig.ShaderCaptureMode normalizeShaderCaptureMode(PerfectFrameConfig.ShaderCaptureMode mode) {
-        return mode == PerfectFrameConfig.ShaderCaptureMode.OCULUS ? PerfectFrameConfig.ShaderCaptureMode.IRIS : mode;
+    public PerfectFlowConfig.ShaderCaptureMode normalizeShaderCaptureMode(PerfectFlowConfig.ShaderCaptureMode mode) {
+        return mode == PerfectFlowConfig.ShaderCaptureMode.OCULUS ? PerfectFlowConfig.ShaderCaptureMode.IRIS : mode;
     }
 
     @Override

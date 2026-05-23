@@ -22,7 +22,11 @@ public final class FabricRecordingHud {
         String queue = session.exporterQueueCapacity() > 0
                 ? " q" + session.exporterQueueDepth() + "/" + session.exporterQueueCapacity()
                 : "";
-        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps" + size + queue;
+        String sync = session.effectiveSyncMode().displayName();
+        if (session.syncDowngraded()) {
+            sync = sync + "*";
+        }
+        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + size + queue;
         int width = minecraft.textRenderer.getWidth(text);
         int x = minecraft.getWindow().getScaledWidth() - width - 10;
         int y = 10;

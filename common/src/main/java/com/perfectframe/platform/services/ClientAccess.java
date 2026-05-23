@@ -11,6 +11,8 @@ public interface ClientAccess {
 
     boolean isWorldReady();
 
+    boolean isSingleplayerWorld();
+
     List<CapturedFrame> captureFrames(com.perfectframe.capture.CaptureSession session, CaptureSource source);
 
     void postChatMessage(String message);

@@ -31,4 +31,13 @@ public record CaptureSource(
     public int height() {
         return hasColor() ? colorAttachment.height() : depthAttachment.height();
     }
+
+    public void destroy() {
+        if (hasColor()) {
+            colorAttachment.destroy();
+        }
+        if (hasDepth() && depthAttachment != colorAttachment) {
+            depthAttachment.destroy();
+        }
+    }
 }

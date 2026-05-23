@@ -4,7 +4,7 @@ import com.perfectframe.capture.CaptureSession;
 import com.perfectframe.capture.ffmpeg.FfmpegLocator;
 import com.perfectframe.capture.frame.CapturedFrame;
 import com.perfectframe.capture.frame.PixelFormat;
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -26,6 +27,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
     private WritableByteChannel pipe;
     private Path logFile;
     private CaptureSession session;
+    private MotionBlurFrameProcessor motionBlurProcessor;
     private BlockingQueue<QueuedFrame> queue;
     private int queueCapacity;
     private long stallTimeoutMillis;
@@ -36,7 +38,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
     @Override
     public void open(CaptureSession session, String streamName, int width, int height, PixelFormat format) throws Exception {
         this.session = session;
-        PerfectFrameConfig config = session.config();
+        PerfectFlowConfig config = session.config();
         Files.createDirectories(session.outputDirectory());
         Path ffmpeg = FfmpegLocator.locate(config);
 
@@ -57,6 +59,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         process = builder.start();
         OutputStream outputStream = process.getOutputStream();
         pipe = Channels.newChannel(outputStream);
+        motionBlurProcessor = shouldUseExporterMotionBlur(config, streamName) ? new MotionBlurFrameProcessor(config, streamName) : null;
         queueCapacity = config.ffmpeg.writerQueueCapacityFrames;
         stallTimeoutMillis = config.ffmpeg.writerStallTimeoutMillis;
         queue = new ArrayBlockingQueue<>(queueCapacity);
@@ -112,7 +115,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
     }
 
     private List<String> buildArguments(CaptureSession session, String streamName, int width, int height, PixelFormat format) {
-        PerfectFrameConfig config = session.config();
+        PerfectFlowConfig config = session.config();
         if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
             String args = config.ffmpeg.videoArgs
                     .replace("%PIX_FMT%", format.ffmpegName())
@@ -129,7 +132,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         session.setOutputSize(outputWidth, outputHeight);
         int effectiveBitrate = effectiveBitrate(config.ffmpeg.videoBitrateKbps, config.ffmpeg.qualityPreset);
         String bitrate = effectiveBitrate + "k";
-        String filter = "vflip,scale=" + outputWidth + ":" + outputHeight + ":flags=bicubic,pad=ceil(iw/2)*2:ceil(ih/2)*2";
+        String filter = buildVideoFilter(config, streamName, outputWidth, outputHeight);
 
         List<String> args = new ArrayList<>();
         args.add("-y");
@@ -167,7 +170,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         return args;
     }
 
-    private int outputWidth(PerfectFrameConfig config, int width) {
+    private int outputWidth(PerfectFlowConfig config, int width) {
         return switch (config.capture.resolutionMode) {
             case SCALE -> evenDimension(Math.max(2, (int) Math.round(width * config.capture.resolutionScale)));
             case FIXED -> config.capture.outputWidth > 0 ? config.capture.outputWidth : evenDimension(width);
@@ -175,7 +178,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         };
     }
 
-    private int outputHeight(PerfectFrameConfig config, int height) {
+    private int outputHeight(PerfectFlowConfig config, int height) {
         return switch (config.capture.resolutionMode) {
             case SCALE -> evenDimension(Math.max(2, (int) Math.round(height * config.capture.resolutionScale)));
             case FIXED -> config.capture.outputHeight > 0 ? config.capture.outputHeight : evenDimension(height);
@@ -187,7 +190,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         return dimension % 2 == 0 ? dimension : dimension + 1;
     }
 
-    private String presetArgument(PerfectFrameConfig.QualityPreset preset) {
+    private String presetArgument(PerfectFlowConfig.QualityPreset preset) {
         return switch (preset) {
             case SMALL -> "medium";
             case BALANCED -> "veryfast";
@@ -195,12 +198,75 @@ public final class FfmpegPipeExporter implements FrameExporter {
         };
     }
 
-    private int effectiveBitrate(int configuredBitrate, PerfectFrameConfig.QualityPreset preset) {
+    private int effectiveBitrate(int configuredBitrate, PerfectFlowConfig.QualityPreset preset) {
         return switch (preset) {
             case SMALL -> Math.max(250, configuredBitrate / 2);
             case BALANCED -> configuredBitrate;
             case FAST -> Math.max(250, configuredBitrate);
         };
+    }
+
+    private boolean shouldUseExporterMotionBlur(PerfectFlowConfig config, String streamName) {
+        return config.motionBlur != null
+                && config.motionBlur.enabled
+                && config.motionBlur.path == PerfectFlowConfig.MotionBlurPath.EXPORTER_THREAD
+                && "color".equals(streamName);
+    }
+
+    private String buildVideoFilter(PerfectFlowConfig config, String streamName, int outputWidth, int outputHeight) {
+        List<String> filters = new ArrayList<>();
+        filters.add("vflip");
+        if (config.motionBlur != null
+                && config.motionBlur.enabled
+                && config.motionBlur.path == PerfectFlowConfig.MotionBlurPath.FFMPEG_FILTER
+                && "color".equals(streamName)) {
+            filters.add(buildTmixFilter(config.motionBlur));
+        }
+        filters.add("scale=" + outputWidth + ":" + outputHeight + ":flags=bicubic");
+        filters.add("pad=ceil(iw/2)*2:ceil(ih/2)*2");
+        return String.join(",", filters);
+    }
+
+    private String buildTmixFilter(PerfectFlowConfig.MotionBlur motionBlur) {
+        int frames;
+        double[] weights;
+        if (motionBlur.mode == PerfectFlowConfig.MotionBlurMode.ACCUMULATION) {
+            frames = Math.max(2, Math.min(16, motionBlur.sampleCount));
+            weights = buildAccumulationWeights(frames, motionBlur.shutterFraction);
+        } else {
+            frames = Math.max(2, Math.min(16, motionBlur.blendFrameCount));
+            weights = buildFrameBlendWeights(frames, motionBlur.shutterFraction);
+        }
+
+        StringBuilder filter = new StringBuilder("tmix=frames=").append(frames).append(":weights=");
+        for (int i = 0; i < weights.length; i++) {
+            if (i > 0) {
+                filter.append(' ');
+            }
+            filter.append(String.format(Locale.ROOT, "%.6f", weights[i]));
+        }
+        return filter.toString();
+    }
+
+    private double[] buildFrameBlendWeights(int frames, double strength) {
+        double[] weights = new double[frames];
+        double clampedStrength = Math.max(0.0D, Math.min(1.0D, strength));
+        for (int i = 0; i < frames; i++) {
+            double t = frames <= 1 ? 0.0D : i / (double) (frames - 1);
+            weights[i] = 1.0D - clampedStrength + (clampedStrength * (t + 1.0D / frames));
+        }
+        return weights;
+    }
+
+    private double[] buildAccumulationWeights(int frames, double shutterFraction) {
+        double[] weights = new double[frames];
+        double alpha = Math.max(0.02D, Math.min(1.0D, shutterFraction / Math.max(1, frames)));
+        double carry = 1.0D;
+        for (int i = frames - 1; i >= 0; i--) {
+            weights[i] = alpha * carry;
+            carry *= (1.0D - alpha);
+        }
+        return weights;
     }
 
     private void enqueueFrame(CapturedFrame frame) throws Exception {
@@ -227,7 +293,10 @@ public final class FfmpegPipeExporter implements FrameExporter {
                     break;
                 }
                 try {
-                    writeFully(queuedFrame.frame().pixels());
+                    ByteBuffer pixels = motionBlurProcessor == null
+                            ? queuedFrame.frame().pixels()
+                            : motionBlurProcessor.process(queuedFrame.frame());
+                    writeFully(pixels);
                     session.setExporterQueueStatus(queue.size(), queueCapacity);
                 } finally {
                     queuedFrame.frame().release();

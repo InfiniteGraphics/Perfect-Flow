@@ -29,7 +29,9 @@ public final class ColorTextureCaptureAttachment implements CaptureAttachment {
     @Override
     public void bindRead() {
         previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
-        readFramebufferId = GL30.glGenFramebuffers();
+        if (readFramebufferId == 0) {
+            readFramebufferId = GL30.glGenFramebuffers();
+        }
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
         GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, textureId, 0);
         GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
@@ -38,6 +40,10 @@ public final class ColorTextureCaptureAttachment implements CaptureAttachment {
     @Override
     public void unbindRead() {
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
+    }
+
+    @Override
+    public void destroy() {
         if (readFramebufferId != 0) {
             GL30.glDeleteFramebuffers(readFramebufferId);
             readFramebufferId = 0;

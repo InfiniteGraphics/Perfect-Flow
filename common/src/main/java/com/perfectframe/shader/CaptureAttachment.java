@@ -8,4 +8,7 @@ public interface CaptureAttachment {
     void bindRead();
 
     void unbindRead();
+
+    default void destroy() {
+    }
 }
