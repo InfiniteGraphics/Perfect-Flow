@@ -26,7 +26,8 @@ public final class FabricRecordingHud {
         if (session.syncDowngraded()) {
             sync = sync + "*";
         }
-        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + size + queue;
+        String audio = session.requestedAudioEnabled() ? (session.audioDowngraded() ? " A*" : " A") : "";
+        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + audio + size + queue;
         int width = minecraft.textRenderer.getWidth(text);
         int x = minecraft.getWindow().getScaledWidth() - width - 10;
         int y = 10;

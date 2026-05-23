@@ -64,6 +64,27 @@ public final class PerfectFlowModMenu implements ModMenuApi {
                     .setDefaultValue(true)
                     .setSaveConsumer(value -> config.capture.showRecordingHud = value)
                     .build());
+            ConfigCategory audio = builder.getOrCreateCategory(Text.literal("Audio"));
+            audio.addEntry(entries.startBooleanToggle(Text.literal("Enable audio recording"), config.audio.enabled)
+                    .setDefaultValue(false)
+                    .setTooltip(Text.literal("Records game output audio when the platform supports it. Audio failure downgrades to video-only."))
+                    .setSaveConsumer(value -> config.audio.enabled = value)
+                    .build());
+            audio.addEntry(entries.startEnumSelector(Text.literal("Audio source"), FabricAudioMode.class, FabricAudioMode.from(config.audio.mode))
+                    .setDefaultValue(FabricAudioMode.GAME_OUTPUT)
+                    .setTooltip(Text.literal("Game output is the only supported audio source for now."))
+                    .setSaveConsumer(value -> config.audio.mode = value.toConfigMode())
+                    .build());
+            audio.addEntry(entries.startEnumSelector(Text.literal("Device selection"), FabricAudioDeviceSelection.class, FabricAudioDeviceSelection.from(config.audio.deviceSelection))
+                    .setDefaultValue(FabricAudioDeviceSelection.AUTO)
+                    .setTooltip(Text.literal("Auto uses the platform default output capture device. Custom uses the device name below."))
+                    .setSaveConsumer(value -> config.audio.deviceSelection = value.toConfigSelection())
+                    .build());
+            audio.addEntry(entries.startStrField(Text.literal("Device name"), config.audio.deviceName)
+                    .setDefaultValue("")
+                    .setTooltip(Text.literal("Only used when device selection is set to Custom."))
+                    .setSaveConsumer(value -> config.audio.deviceName = value)
+                    .build());
             ConfigCategory motionBlur = builder.getOrCreateCategory(Text.literal("Motion Blur"));
             motionBlur.addEntry(entries.startBooleanToggle(Text.literal("Enable motion blur"), config.motionBlur.enabled)
                     .setDefaultValue(false)
@@ -188,6 +209,31 @@ public final class PerfectFlowModMenu implements ModMenuApi {
             return this == FFMPEG_FILTER
                     ? PerfectFlowConfig.MotionBlurPath.FFMPEG_FILTER
                     : PerfectFlowConfig.MotionBlurPath.EXPORTER_THREAD;
+        }
+    }
+
+    private enum FabricAudioMode {
+        GAME_OUTPUT;
+
+        private static FabricAudioMode from(PerfectFlowConfig.AudioMode mode) {
+            return GAME_OUTPUT;
+        }
+
+        private PerfectFlowConfig.AudioMode toConfigMode() {
+            return PerfectFlowConfig.AudioMode.GAME_OUTPUT;
+        }
+    }
+
+    private enum FabricAudioDeviceSelection {
+        AUTO,
+        CUSTOM;
+
+        private static FabricAudioDeviceSelection from(PerfectFlowConfig.AudioDeviceSelection selection) {
+            return selection == PerfectFlowConfig.AudioDeviceSelection.CUSTOM ? CUSTOM : AUTO;
+        }
+
+        private PerfectFlowConfig.AudioDeviceSelection toConfigSelection() {
+            return this == CUSTOM ? PerfectFlowConfig.AudioDeviceSelection.CUSTOM : PerfectFlowConfig.AudioDeviceSelection.AUTO;
         }
     }
 

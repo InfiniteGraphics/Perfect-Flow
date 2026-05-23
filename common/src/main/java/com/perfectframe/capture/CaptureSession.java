@@ -14,7 +14,11 @@ public final class CaptureSession {
     private final String name;
     private final FrameScheduler scheduler;
     private final PerfectFlowConfig.SyncMode requestedSyncMode;
+    private final boolean requestedAudioEnabled;
     private PerfectFlowConfig.SyncMode effectiveSyncMode;
+    private boolean effectiveAudioEnabled;
+    private boolean audioDowngraded;
+    private String audioStatusDetail = "";
     private int captureWidth;
     private int captureHeight;
     private int outputWidth;
@@ -29,7 +33,9 @@ public final class CaptureSession {
         this.name = LocalDateTime.now().format(NAME_FORMAT);
         this.scheduler = new FrameScheduler(config.capture.fps, config.sync.engineSpeed);
         this.requestedSyncMode = config.sync.mode;
+        this.requestedAudioEnabled = config.audio != null && config.audio.enabled;
         this.effectiveSyncMode = config.sync.mode;
+        this.effectiveAudioEnabled = requestedAudioEnabled;
         this.scheduler.begin();
     }
 
@@ -64,6 +70,28 @@ public final class CaptureSession {
 
     public void setEffectiveSyncMode(PerfectFlowConfig.SyncMode effectiveSyncMode) {
         this.effectiveSyncMode = effectiveSyncMode == null ? PerfectFlowConfig.SyncMode.CLIENT_ONLY : effectiveSyncMode;
+    }
+
+    public boolean requestedAudioEnabled() {
+        return requestedAudioEnabled;
+    }
+
+    public boolean effectiveAudioEnabled() {
+        return effectiveAudioEnabled;
+    }
+
+    public boolean audioDowngraded() {
+        return audioDowngraded;
+    }
+
+    public String audioStatusDetail() {
+        return audioStatusDetail;
+    }
+
+    public void setAudioStatus(boolean effectiveAudioEnabled, boolean downgraded, String detail) {
+        this.effectiveAudioEnabled = effectiveAudioEnabled;
+        this.audioDowngraded = downgraded;
+        this.audioStatusDetail = detail == null ? "" : detail;
     }
 
     public long capturedFrames() {

@@ -26,7 +26,8 @@ public final class NeoForgeRecordingHud {
         if (session.syncDowngraded()) {
             sync = sync + "*";
         }
-        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + size + queue;
+        String audio = session.requestedAudioEnabled() ? (session.audioDowngraded() ? " A*" : " A") : "";
+        String text = "REC " + session.capturedFrames() + "f " + session.scheduler().targetFps() + "fps " + sync + audio + size + queue;
         int width = minecraft.font.width(text);
         int x = minecraft.getWindow().getGuiScaledWidth() - width - 10;
         int y = 10;

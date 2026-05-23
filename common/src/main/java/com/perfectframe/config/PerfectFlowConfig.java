@@ -32,6 +32,7 @@ public class PerfectFlowConfig {
     public Capture capture = new Capture();
     public Sync sync = new Sync();
     public Ffmpeg ffmpeg = new Ffmpeg();
+    public Audio audio = new Audio();
     public Shader shader = new Shader();
     public MotionBlur motionBlur = new MotionBlur();
 
@@ -78,6 +79,7 @@ public class PerfectFlowConfig {
         if (capture == null) capture = new Capture();
         if (sync == null) sync = new Sync();
         if (ffmpeg == null) ffmpeg = new Ffmpeg();
+        if (audio == null) audio = new Audio();
         if (shader == null) shader = new Shader();
         if (motionBlur == null) motionBlur = new MotionBlur();
         if (sync.mode == null) {
@@ -156,6 +158,18 @@ public class PerfectFlowConfig {
             ffmpeg.videoArgs = "";
             changed = true;
         }
+        if (audio.mode == null) {
+            audio.mode = AudioMode.GAME_OUTPUT;
+            changed = true;
+        }
+        if (audio.deviceSelection == null) {
+            audio.deviceSelection = AudioDeviceSelection.AUTO;
+            changed = true;
+        }
+        if (audio.deviceName == null) {
+            audio.deviceName = "";
+            changed = true;
+        }
         if (motionBlur.mode == null) {
             motionBlur.mode = MotionBlurMode.FRAME_BLEND;
             changed = true;
@@ -221,6 +235,13 @@ public class PerfectFlowConfig {
         public boolean enableLogging = true;
     }
 
+    public static class Audio {
+        public boolean enabled = false;
+        public AudioMode mode = AudioMode.GAME_OUTPUT;
+        public AudioDeviceSelection deviceSelection = AudioDeviceSelection.AUTO;
+        public String deviceName = "";
+    }
+
     public static class Shader {
         public ShaderCaptureMode captureMode = ShaderCaptureMode.AUTO;
     }
@@ -253,6 +274,15 @@ public class PerfectFlowConfig {
 
     public enum FfmpegMode {
         CUSTOM_PATH
+    }
+
+    public enum AudioMode {
+        GAME_OUTPUT
+    }
+
+    public enum AudioDeviceSelection {
+        AUTO,
+        CUSTOM
     }
 
     public enum SyncMode {

@@ -30,6 +30,7 @@ public enum CaptureController {
     private int captureSourceHeight = -1;
     private boolean keyToggleQueued;
     private boolean syncDowngradeNotified;
+    private boolean audioDowngradeNotified;
 
     public void configure(PerfectFlowConfig config) {
         this.config = config;
@@ -79,7 +80,15 @@ public enum CaptureController {
             }
             exporters.clear();
             syncDowngradeNotified = false;
+            audioDowngradeNotified = false;
             session.setEffectiveSyncMode(config.sync.mode);
+            if (isAudioPotentiallySupported()) {
+                session.setAudioStatus(config.audio != null && config.audio.enabled, false, "");
+            } else if (config.audio != null && config.audio.enabled) {
+                session.setAudioStatus(false, true, buildAudioDowngradeReason());
+            } else {
+                session.setAudioStatus(false, false, "");
+            }
             state = CaptureState.RECORDING;
             Constants.LOG.info("{} capture source: {}", Constants.MOD_NAME, captureSource.label());
             notifyClient(Constants.MOD_NAME + " recording started (" + captureSource.label() + ").");
@@ -112,6 +121,13 @@ public enum CaptureController {
                     && !Services.PLATFORM.clientAccess().isSingleplayerWorld()) {
                 syncDowngradeNotified = true;
                 notifyClient(Constants.MOD_NAME + ": sync mode downgraded to Client Only in multiplayer.");
+            }
+            if (session.requestedAudioEnabled() && session.audioDowngraded() && !audioDowngradeNotified) {
+                audioDowngradeNotified = true;
+                String detail = session.audioStatusDetail();
+                notifyClient(detail == null || detail.isBlank()
+                        ? Constants.MOD_NAME + ": audio recording downgraded to video-only."
+                        : Constants.MOD_NAME + ": audio recording downgraded to video-only. " + detail);
             }
             session.scheduler().awaitFrameWindow(effectiveSyncMode == PerfectFlowConfig.SyncMode.NORMAL);
             CaptureSource activeSource = resolveCaptureSource(false);
@@ -147,6 +163,7 @@ public enum CaptureController {
         session = null;
         clearCaptureSource();
         syncDowngradeNotified = false;
+        audioDowngradeNotified = false;
         state = CaptureState.IDLE;
         notifyClient(Constants.MOD_NAME + " recording stopped (" + frames + " frames).");
     }
@@ -271,5 +288,29 @@ public enum CaptureController {
         }
 
         return Constants.MOD_NAME + " capture failed: " + message;
+    }
+
+    private boolean isAudioPotentiallySupported() {
+        return config.audio != null
+                && config.audio.enabled
+                && config.capture.outputMode == PerfectFlowConfig.OutputMode.FFMPEG_MP4
+                && (config.ffmpeg.videoArgs == null || config.ffmpeg.videoArgs.isBlank())
+                && System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
+    private String buildAudioDowngradeReason() {
+        if (config.audio == null || !config.audio.enabled) {
+            return "";
+        }
+        if (config.capture.outputMode != PerfectFlowConfig.OutputMode.FFMPEG_MP4) {
+            return "Audio recording only works with FFmpeg MP4 output.";
+        }
+        if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
+            return "Audio recording is disabled when advanced FFmpeg video args are in use.";
+        }
+        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+            return "Audio recording is currently supported on Windows only.";
+        }
+        return "Audio recording is unavailable on this platform or configuration.";
     }
 }
