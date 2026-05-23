@@ -18,10 +18,10 @@
     "environment": "client",
     "entrypoints": {
         "client": [
-            "com.perfectframe.fabric.PerfectFlowFabric"
+          "com.perfectflow.fabric.PerfectFlowFabric"
         ],
         "modmenu": [
-            "com.perfectframe.fabric.config.PerfectFlowModMenu"
+          "com.perfectflow.fabric.config.PerfectFlowModMenu"
         ]
     },
     "mixins": [

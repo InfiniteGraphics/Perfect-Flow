@@ -1,0 +1,60 @@
+package com.perfectflow.fabric.platform;
+
+import com.perfectflow.config.PerfectFlowConfig;
+import com.perfectflow.fabric.shader.IrisCaptureBridge;
+import com.perfectflow.platform.services.ClientAccess;
+import com.perfectflow.platform.services.IPlatformHelper;
+import com.perfectflow.platform.services.MainTargetAccess;
+import com.perfectflow.shader.CaptureSource;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
+
+import java.nio.file.Path;
+
+public final class FabricPlatformHelper implements IPlatformHelper {
+    private final ClientAccess clientAccess = new FabricClientAccess();
+
+    @Override
+    public String getPlatformName() {
+        return "Fabric";
+    }
+
+    @Override
+    public boolean isModLoaded(String modId) {
+        return FabricLoader.getInstance().isModLoaded(modId);
+    }
+
+    @Override
+    public boolean isDevelopmentEnvironment() {
+        return FabricLoader.getInstance().isDevelopmentEnvironment();
+    }
+
+    @Override
+    public Path getConfigDirectory() {
+        return FabricLoader.getInstance().getConfigDir();
+    }
+
+    @Override
+    public ClientAccess clientAccess() {
+        return clientAccess;
+    }
+
+    @Override
+    public PerfectFlowConfig.ShaderCaptureMode normalizeShaderCaptureMode(PerfectFlowConfig.ShaderCaptureMode mode) {
+        return mode == PerfectFlowConfig.ShaderCaptureMode.OCULUS ? PerfectFlowConfig.ShaderCaptureMode.IRIS : mode;
+    }
+
+    @Override
+    public CaptureSource irisCaptureSource() {
+        if (!isModLoaded("iris")) {
+            String reason = "Iris mode requires Iris to be installed.";
+            return CaptureSource.unavailable("iris", "iris/missing", reason, reason);
+        }
+        return IrisCaptureBridge.resolve(MinecraftClient.getInstance());
+    }
+
+    @Override
+    public MainTargetAccess mainTarget() {
+        return new FabricMainTargetAccess(MinecraftClient.getInstance().getFramebuffer());
+    }
+}
