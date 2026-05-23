@@ -17,142 +17,149 @@ public final class PerfectFlowModMenu implements ModMenuApi {
             PerfectFlowConfig config = CommonClass.config();
             ConfigBuilder builder = ConfigBuilder.create()
                     .setParentScreen(parent)
-                    .setTitle(Text.literal("PerfectFlow"));
+                    .setTitle(key("title"));
             ConfigEntryBuilder entries = builder.entryBuilder();
-            ConfigCategory capture = builder.getOrCreateCategory(Text.literal("Capture"));
-            capture.addEntry(entries.startIntField(Text.literal("FPS"), config.capture.fps)
+            ConfigCategory capture = builder.getOrCreateCategory(key("category.capture"));
+            capture.addEntry(entries.startIntField(key("option.capture.fps"), config.capture.fps)
                     .setMin(1)
                     .setMax(240)
                     .setDefaultValue(60)
                     .setSaveConsumer(value -> config.capture.fps = value)
                     .build());
-            capture.addEntry(entries.startStrField(Text.literal("Output path"), config.capture.outputPath)
+            capture.addEntry(entries.startStrField(key("option.capture.output_path"), config.capture.outputPath)
                     .setDefaultValue("perfectflow_captures")
                     .setSaveConsumer(value -> config.capture.outputPath = value)
                     .build());
-            capture.addEntry(entries.startEnumSelector(Text.literal("Resolution mode"), PerfectFlowConfig.ResolutionMode.class, config.capture.resolutionMode)
+            capture.addEntry(entries.startEnumSelector(key("option.capture.resolution_mode"), PerfectFlowConfig.ResolutionMode.class, config.capture.resolutionMode)
                     .setDefaultValue(PerfectFlowConfig.ResolutionMode.NATIVE)
+                    .setEnumNameProvider(value -> enumKey("resolution_mode", value.name().toLowerCase()))
                     .setSaveConsumer(value -> config.capture.resolutionMode = value)
                     .build());
-            capture.addEntry(entries.startDoubleField(Text.literal("Resolution scale"), config.capture.resolutionScale)
+            capture.addEntry(entries.startDoubleField(key("option.capture.resolution_scale"), config.capture.resolutionScale)
                     .setMin(0.1D)
                     .setMax(1.0D)
                     .setDefaultValue(1.0D)
                     .setSaveConsumer(value -> config.capture.resolutionScale = value)
                     .build());
-            capture.addEntry(entries.startIntField(Text.literal("Output width"), config.capture.outputWidth)
+            capture.addEntry(entries.startIntField(key("option.capture.output_width"), config.capture.outputWidth)
                     .setMin(0)
                     .setMax(7680)
                     .setDefaultValue(0)
                     .setSaveConsumer(value -> config.capture.outputWidth = value)
                     .build());
-            capture.addEntry(entries.startIntField(Text.literal("Output height"), config.capture.outputHeight)
+            capture.addEntry(entries.startIntField(key("option.capture.output_height"), config.capture.outputHeight)
                     .setMin(0)
                     .setMax(4320)
                     .setDefaultValue(0)
                     .setSaveConsumer(value -> config.capture.outputHeight = value)
                     .build());
-            capture.addEntry(entries.startBooleanToggle(Text.literal("Record alpha"), config.capture.recordAlpha)
+            capture.addEntry(entries.startBooleanToggle(key("option.capture.record_alpha"), config.capture.recordAlpha)
                     .setDefaultValue(false)
                     .setSaveConsumer(value -> config.capture.recordAlpha = value)
                     .build());
-            capture.addEntry(entries.startBooleanToggle(Text.literal("Record depth"), config.capture.recordDepth)
+            capture.addEntry(entries.startBooleanToggle(key("option.capture.record_depth"), config.capture.recordDepth)
                     .setDefaultValue(false)
                     .setSaveConsumer(value -> config.capture.recordDepth = value)
                     .build());
-            capture.addEntry(entries.startBooleanToggle(Text.literal("Show recording HUD"), config.capture.showRecordingHud)
+            capture.addEntry(entries.startBooleanToggle(key("option.capture.show_recording_hud"), config.capture.showRecordingHud)
                     .setDefaultValue(true)
                     .setSaveConsumer(value -> config.capture.showRecordingHud = value)
                     .build());
-            ConfigCategory audio = builder.getOrCreateCategory(Text.literal("Audio"));
-            audio.addEntry(entries.startBooleanToggle(Text.literal("Enable audio recording"), config.audio.enabled)
+            ConfigCategory audio = builder.getOrCreateCategory(key("category.audio"));
+            audio.addEntry(entries.startBooleanToggle(key("option.audio.enable_recording"), config.audio.enabled)
                     .setDefaultValue(false)
-                    .setTooltip(Text.literal("On Windows, records only the Minecraft process output through Windows process loopback. Audio failure downgrades to video-only."))
+                    .setTooltip(key("tooltip.audio.enable_recording"))
                     .setSaveConsumer(value -> config.audio.enabled = value)
                     .build());
-            audio.addEntry(entries.startEnumSelector(Text.literal("Audio source"), FabricAudioMode.class, FabricAudioMode.from(config.audio.mode))
+            audio.addEntry(entries.startEnumSelector(key("option.audio.source"), FabricAudioMode.class, FabricAudioMode.from(config.audio.mode))
                     .setDefaultValue(FabricAudioMode.PROCESS_OUTPUT)
-                    .setTooltip(Text.literal("Windows process loopback captures the Minecraft process output without relying on Stereo Mix or virtual cables."))
+                    .setEnumNameProvider(value -> enumKey("audio_mode", value.name().toLowerCase()))
+                    .setTooltip(key("tooltip.audio.source"))
                     .setSaveConsumer(value -> config.audio.mode = value.toConfigMode())
                     .build());
-            ConfigCategory motionBlur = builder.getOrCreateCategory(Text.literal("Motion Blur"));
-            motionBlur.addEntry(entries.startBooleanToggle(Text.literal("Enable motion blur"), config.motionBlur.enabled)
+            ConfigCategory motionBlur = builder.getOrCreateCategory(key("category.motion_blur"));
+            motionBlur.addEntry(entries.startBooleanToggle(key("option.motion_blur.enable"), config.motionBlur.enabled)
                     .setDefaultValue(false)
                     .setSaveConsumer(value -> config.motionBlur.enabled = value)
                     .build());
-            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Mode"), PerfectFlowConfig.MotionBlurMode.class, config.motionBlur.mode)
+            motionBlur.addEntry(entries.startEnumSelector(key("option.motion_blur.mode"), PerfectFlowConfig.MotionBlurMode.class, config.motionBlur.mode)
                     .setDefaultValue(PerfectFlowConfig.MotionBlurMode.FRAME_BLEND)
+                    .setEnumNameProvider(value -> enumKey("motion_blur_mode", value.name().toLowerCase()))
                     .setSaveConsumer(value -> config.motionBlur.mode = value)
                     .build());
-            motionBlur.addEntry(entries.startEnumSelector(Text.literal("Processing path"), FabricMotionBlurPath.class, FabricMotionBlurPath.from(config.motionBlur.path))
+            motionBlur.addEntry(entries.startEnumSelector(key("option.motion_blur.processing_path"), FabricMotionBlurPath.class, FabricMotionBlurPath.from(config.motionBlur.path))
                     .setDefaultValue(FabricMotionBlurPath.EXPORTER_THREAD)
-                    .setTooltip(Text.literal("FFmpeg filter mode only affects MP4 output. Exporter thread mode keeps the current behavior."))
+                    .setEnumNameProvider(value -> enumKey("motion_blur_path", value.name().toLowerCase()))
+                    .setTooltip(key("tooltip.motion_blur.processing_path"))
                     .setSaveConsumer(value -> config.motionBlur.path = value.toConfigPath())
                     .build());
-            motionBlur.addEntry(entries.startDoubleField(Text.literal("Shutter fraction"), config.motionBlur.shutterFraction)
+            motionBlur.addEntry(entries.startDoubleField(key("option.motion_blur.shutter_fraction"), config.motionBlur.shutterFraction)
                     .setMin(0.0D)
                     .setMax(1.0D)
                     .setDefaultValue(0.5D)
                     .setSaveConsumer(value -> config.motionBlur.shutterFraction = value)
                     .build());
-            motionBlur.addEntry(entries.startIntField(Text.literal("Accumulation samples"), config.motionBlur.sampleCount)
+            motionBlur.addEntry(entries.startIntField(key("option.motion_blur.accumulation_samples"), config.motionBlur.sampleCount)
                     .setMin(2)
                     .setMax(16)
                     .setDefaultValue(4)
                     .setSaveConsumer(value -> config.motionBlur.sampleCount = value)
                     .build());
-            motionBlur.addEntry(entries.startIntField(Text.literal("Blend history frames"), config.motionBlur.blendFrameCount)
+            motionBlur.addEntry(entries.startIntField(key("option.motion_blur.blend_history_frames"), config.motionBlur.blendFrameCount)
                     .setMin(2)
                     .setMax(16)
                     .setDefaultValue(4)
                     .setSaveConsumer(value -> config.motionBlur.blendFrameCount = value)
                     .build());
-            ConfigCategory shader = builder.getOrCreateCategory(Text.literal("Shader"));
-            shader.addEntry(entries.startEnumSelector(Text.literal("Capture mode"), FabricShaderCaptureMode.class, FabricShaderCaptureMode.from(config.shader.captureMode))
+            ConfigCategory shader = builder.getOrCreateCategory(key("category.shader"));
+            shader.addEntry(entries.startEnumSelector(key("option.shader.capture_mode"), FabricShaderCaptureMode.class, FabricShaderCaptureMode.from(config.shader.captureMode))
                     .setDefaultValue(FabricShaderCaptureMode.AUTO)
-                    .setTooltip(Text.literal("IRIS requires Iris with an active shader pack. OCULUS config values are treated as IRIS on Fabric 1.20.4."))
+                    .setEnumNameProvider(value -> enumKey("shader_capture_mode", value.name().toLowerCase()))
+                    .setTooltip(key("tooltip.shader.capture_mode"))
                     .setSaveConsumer(value -> config.shader.captureMode = value.toConfigMode())
                     .build());
-            ConfigCategory sync = builder.getOrCreateCategory(Text.literal("Sync"));
-            sync.addEntry(entries.startEnumSelector(Text.literal("Sync mode"), FabricSyncMode.class, FabricSyncMode.from(config.sync.mode))
+            ConfigCategory sync = builder.getOrCreateCategory(key("category.sync"));
+            sync.addEntry(entries.startEnumSelector(key("option.sync.mode"), FabricSyncMode.class, FabricSyncMode.from(config.sync.mode))
                     .setDefaultValue(FabricSyncMode.NORMAL)
-                    .setTooltip(Text.literal("Normal uses the stronger singleplayer sync path and automatically downgrades to Client Only in multiplayer."))
+                    .setEnumNameProvider(value -> enumKey("sync_mode", value.name().toLowerCase()))
+                    .setTooltip(key("tooltip.sync.mode"))
                     .setSaveConsumer(value -> config.sync.mode = value.toConfigMode())
                     .build());
-            sync.addEntry(entries.startDoubleField(Text.literal("Engine speed"), config.sync.engineSpeed)
+            sync.addEntry(entries.startDoubleField(key("option.sync.engine_speed"), config.sync.engineSpeed)
                     .setMin(0.01D)
                     .setMax(1200.0D)
                     .setDefaultValue(1.0D)
                     .setSaveConsumer(value -> config.sync.engineSpeed = value)
                     .build());
-            ConfigCategory ffmpeg = builder.getOrCreateCategory(Text.literal("FFmpeg"));
-            ffmpeg.addEntry(entries.startStrField(Text.literal("FFmpeg executable path"), config.ffmpeg.customPath)
+            ConfigCategory ffmpeg = builder.getOrCreateCategory(key("category.ffmpeg"));
+            ffmpeg.addEntry(entries.startStrField(key("option.ffmpeg.executable_path"), config.ffmpeg.customPath)
                     .setDefaultValue("")
                     .setSaveConsumer(value -> config.ffmpeg.customPath = value)
                     .build());
-            ffmpeg.addEntry(entries.startEnumSelector(Text.literal("Quality preset"), PerfectFlowConfig.QualityPreset.class, config.ffmpeg.qualityPreset)
+            ffmpeg.addEntry(entries.startEnumSelector(key("option.ffmpeg.quality_preset"), PerfectFlowConfig.QualityPreset.class, config.ffmpeg.qualityPreset)
                     .setDefaultValue(PerfectFlowConfig.QualityPreset.BALANCED)
+                    .setEnumNameProvider(value -> enumKey("quality_preset", value.name().toLowerCase()))
                     .setSaveConsumer(value -> config.ffmpeg.qualityPreset = value)
                     .build());
-            ffmpeg.addEntry(entries.startIntField(Text.literal("Video bitrate kbps"), config.ffmpeg.videoBitrateKbps)
+            ffmpeg.addEntry(entries.startIntField(key("option.ffmpeg.video_bitrate_kbps"), config.ffmpeg.videoBitrateKbps)
                     .setMin(250)
                     .setMax(100000)
                     .setDefaultValue(8000)
                     .setSaveConsumer(value -> config.ffmpeg.videoBitrateKbps = value)
                     .build());
-            ffmpeg.addEntry(entries.startIntField(Text.literal("Writer queue frames"), config.ffmpeg.writerQueueCapacityFrames)
+            ffmpeg.addEntry(entries.startIntField(key("option.ffmpeg.writer_queue_frames"), config.ffmpeg.writerQueueCapacityFrames)
                     .setMin(1)
                     .setMax(240)
                     .setDefaultValue(12)
                     .setSaveConsumer(value -> config.ffmpeg.writerQueueCapacityFrames = value)
                     .build());
-            ffmpeg.addEntry(entries.startIntField(Text.literal("Writer stall timeout ms"), config.ffmpeg.writerStallTimeoutMillis)
+            ffmpeg.addEntry(entries.startIntField(key("option.ffmpeg.writer_stall_timeout_ms"), config.ffmpeg.writerStallTimeoutMillis)
                     .setMin(1000)
                     .setMax(120000)
                     .setDefaultValue(30000)
                     .setSaveConsumer(value -> config.ffmpeg.writerStallTimeoutMillis = value)
                     .build());
-            ffmpeg.addEntry(entries.startStrField(Text.literal("Advanced video args"), config.ffmpeg.videoArgs)
+            ffmpeg.addEntry(entries.startStrField(key("option.ffmpeg.advanced_video_args"), config.ffmpeg.videoArgs)
                     .setDefaultValue("")
                     .setSaveConsumer(value -> config.ffmpeg.videoArgs = value)
                     .build());
@@ -163,6 +170,14 @@ public final class PerfectFlowModMenu implements ModMenuApi {
             });
             return builder.build();
         };
+    }
+
+    private static Text key(String path) {
+        return Text.translatable("perfectflow.config." + path);
+    }
+
+    private static Text enumKey(String group, String value) {
+        return Text.translatable("perfectflow.config.enum." + group + "." + value);
     }
 
     private enum FabricShaderCaptureMode {

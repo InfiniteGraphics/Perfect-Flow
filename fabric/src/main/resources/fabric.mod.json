@@ -5,12 +5,14 @@
     "name": "${mod_name}",
     "description": "${description}",
     "authors": [
-        "${mod_author}"
+        "${mod_author_primary}",
+        "${mod_author_secondary}"
     ],
     "icon": "icon.png",
     "contact": {
-        "homepage": "",
-        "sources": ""
+        "homepage": "${mod_homepage}",
+        "sources": "${mod_sources}",
+        "issues": "${mod_issues}"
     },
     "license": "${license}",
     "environment": "client",

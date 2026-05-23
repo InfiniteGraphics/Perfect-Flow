@@ -2,11 +2,11 @@
 
 PerfectFlow is a Minecraft client mod for offline rendering and frame-perfect video capture.
 
-The first development target is Minecraft 1.20.4 with Fabric and NeoForge builds. The codebase is based on a multiloader layout:
+The current public release target is Minecraft 1.20.4 on Fabric. The codebase still uses a multiloader layout:
 
 - `common`: shared capture controller, config model, exporter interfaces, shader pipeline abstraction, and common mixins.
 - `fabric`: Fabric client entrypoint, key binding, HUD/render hooks, Mod Menu and Cloth Config integration.
-- `neoforge`: NeoForge client entrypoint, key binding, HUD/render hooks, and Oculus detection hook.
+- `neoforge`: unreleased loader-specific implementation that is not part of the current 1.20.4 release plan.
 
 <!-- See [PERFECT_FLOW_TECHNICAL_PRD.md](PERFECT_FLOW_TECHNICAL_PRD.md) for the implementation document. -->
 
