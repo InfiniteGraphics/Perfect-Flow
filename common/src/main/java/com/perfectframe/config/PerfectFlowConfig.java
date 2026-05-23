@@ -159,7 +159,10 @@ public class PerfectFlowConfig {
             changed = true;
         }
         if (audio.mode == null) {
-            audio.mode = AudioMode.GAME_OUTPUT;
+            audio.mode = AudioMode.PROCESS_OUTPUT;
+            changed = true;
+        } else if (audio.mode == AudioMode.GAME_OUTPUT) {
+            audio.mode = AudioMode.PROCESS_OUTPUT;
             changed = true;
         }
         if (audio.deviceSelection == null) {
@@ -237,7 +240,7 @@ public class PerfectFlowConfig {
 
     public static class Audio {
         public boolean enabled = false;
-        public AudioMode mode = AudioMode.GAME_OUTPUT;
+        public AudioMode mode = AudioMode.PROCESS_OUTPUT;
         public AudioDeviceSelection deviceSelection = AudioDeviceSelection.AUTO;
         public String deviceName = "";
     }
@@ -277,6 +280,7 @@ public class PerfectFlowConfig {
     }
 
     public enum AudioMode {
+        PROCESS_OUTPUT,
         GAME_OUTPUT
     }
 

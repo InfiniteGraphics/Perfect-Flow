@@ -36,7 +36,6 @@ public final class CaptureSession {
         this.requestedAudioEnabled = config.audio != null && config.audio.enabled;
         this.effectiveSyncMode = config.sync.mode;
         this.effectiveAudioEnabled = requestedAudioEnabled;
-        this.scheduler.begin();
     }
 
     public PerfectFlowConfig config() {
@@ -52,7 +51,15 @@ public final class CaptureSession {
     }
 
     public Path audioTempFile() {
-        return outputDirectory.resolve(name + "_color.audio.tmp.wav");
+        return outputDirectory.resolve(name + "_color.audio.tmp.raw");
+    }
+
+    public Path audioMetadataFile() {
+        return outputDirectory.resolve(name + "_color.audio.tmp.properties");
+    }
+
+    public Path audioCaptureLogFile() {
+        return outputDirectory.resolve(name + "_color.audio-helper.log");
     }
 
     public FrameScheduler scheduler() {

@@ -1,7 +1,7 @@
 package com.perfectframe.capture;
 
 import com.perfectframe.Constants;
-import com.perfectframe.audio.GameAudioCapture;
+import com.perfectframe.audio.SystemAudioCapture;
 import com.perfectframe.capture.export.FfmpegPipeExporter;
 import com.perfectframe.capture.export.FrameExporter;
 import com.perfectframe.capture.export.TgaSequenceExporter;
@@ -84,7 +84,7 @@ public enum CaptureController {
             audioDowngradeNotified = false;
             session.setEffectiveSyncMode(config.sync.mode);
             if (isAudioPotentiallySupported()) {
-                GameAudioCapture audioCapture = Services.PLATFORM.clientAccess().gameAudioCapture();
+                SystemAudioCapture audioCapture = Services.PLATFORM.clientAccess().systemAudioCapture();
                 String audioFailure = audioCapture.start(session);
                 if (audioFailure == null) {
                     session.setAudioStatus(true, false, "");
@@ -96,6 +96,7 @@ public enum CaptureController {
             } else {
                 session.setAudioStatus(false, false, "");
             }
+            session.scheduler().begin();
             state = CaptureState.RECORDING;
             Constants.LOG.info("{} capture source: {}", Constants.MOD_NAME, captureSource.label());
             notifyClient(Constants.MOD_NAME + " recording started (" + captureSource.label() + ").");
@@ -152,7 +153,7 @@ public enum CaptureController {
             }
             if (!frames.isEmpty()) {
                 if (session.effectiveAudioEnabled()) {
-                    Services.PLATFORM.clientAccess().gameAudioCapture().advanceFrame(session);
+                    Services.PLATFORM.clientAccess().systemAudioCapture().advanceFrame(session);
                 }
                 session.advanceFrame();
             }
@@ -169,7 +170,7 @@ public enum CaptureController {
         }
         state = CaptureState.STOPPING;
         long frames = session == null ? 0 : session.capturedFrames();
-        Services.PLATFORM.clientAccess().gameAudioCapture().stop();
+        Services.PLATFORM.clientAccess().systemAudioCapture().stop();
         closeExporters();
         session = null;
         clearCaptureSource();
@@ -304,6 +305,7 @@ public enum CaptureController {
     private boolean isAudioPotentiallySupported() {
         return config.audio != null
                 && config.audio.enabled
+                && Services.PLATFORM.clientAccess().systemAudioCapture().isSupported()
                 && config.capture.outputMode == PerfectFlowConfig.OutputMode.FFMPEG_MP4
                 && (config.ffmpeg.videoArgs == null || config.ffmpeg.videoArgs.isBlank())
                 && (config.capture.recordColor || config.capture.recordAlpha);
@@ -319,6 +321,6 @@ public enum CaptureController {
         if (config.ffmpeg.videoArgs != null && !config.ffmpeg.videoArgs.isBlank()) {
             return "Audio recording is disabled when advanced FFmpeg video args are in use.";
         }
-        return "Game audio capture is unavailable on this platform or configuration.";
+        return "Process audio capture is unavailable on this platform or configuration.";
     }
 }

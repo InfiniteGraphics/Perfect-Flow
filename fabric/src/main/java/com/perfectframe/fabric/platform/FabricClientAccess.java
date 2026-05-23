@@ -2,8 +2,9 @@ package com.perfectframe.fabric.platform;
 
 import com.perfectframe.capture.CaptureController;
 import com.perfectframe.capture.CaptureSession;
-import com.perfectframe.audio.GameAudioCapture;
-import com.perfectframe.fabric.audio.FabricGameAudioCapture;
+import com.perfectframe.audio.NoopSystemAudioCapture;
+import com.perfectframe.audio.SystemAudioCapture;
+import com.perfectframe.audio.WindowsProcessAudioCapture;
 import com.perfectframe.capture.frame.CapturedFrame;
 import com.perfectframe.capture.pipeline.RenderCapturePipeline;
 import com.perfectframe.platform.services.ClientAccess;
@@ -14,7 +15,7 @@ import java.util.List;
 
 public final class FabricClientAccess implements ClientAccess {
     private final RenderCapturePipeline capturePipeline = new RenderCapturePipeline();
-    private final GameAudioCapture gameAudioCapture = new FabricGameAudioCapture();
+    private final SystemAudioCapture systemAudioCapture = WindowsProcessAudioCapture.createOrNoop();
 
     @Override
     public Path gameDirectory() {
@@ -39,8 +40,8 @@ public final class FabricClientAccess implements ClientAccess {
     }
 
     @Override
-    public GameAudioCapture gameAudioCapture() {
-        return gameAudioCapture;
+    public SystemAudioCapture systemAudioCapture() {
+        return systemAudioCapture;
     }
 
     @Override

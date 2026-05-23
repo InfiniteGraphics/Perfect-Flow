@@ -1,5 +1,6 @@
 package com.perfectframe.capture.export;
 
+import com.perfectframe.audio.SystemAudioMetadata;
 import com.perfectframe.capture.CaptureSession;
 import com.perfectframe.capture.ffmpeg.FfmpegLocator;
 import com.perfectframe.capture.frame.CapturedFrame;
@@ -15,14 +16,9 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -30,22 +26,10 @@ import java.util.concurrent.TimeUnit;
 public final class FfmpegPipeExporter implements FrameExporter {
     private static final long ENQUEUE_POLL_MILLIS = 100L;
     private static final QueuedFrame POISON = new QueuedFrame(null, true);
-    private static final Pattern QUOTED_VALUE_PATTERN = Pattern.compile("\"([^\"]+)\"");
-    private static final List<String> AUDIO_OUTPUT_HINTS = List.of(
-            "stereo mix",
-            "what u hear",
-            "wave out mix",
-            "monitor",
-            "vb-cable",
-            "cable output",
-            "loopback"
-    );
 
     private Process process;
-    private Process audioProcess;
     private WritableByteChannel pipe;
     private Path logFile;
-    private Path audioLogFile;
     private CaptureSession session;
     private MotionBlurFrameProcessor motionBlurProcessor;
     private BlockingQueue<QueuedFrame> queue;
@@ -57,9 +41,8 @@ public final class FfmpegPipeExporter implements FrameExporter {
     private Path outputFile;
     private Path tempVideoFile;
     private Path tempAudioFile;
+    private Path tempAudioMetadataFile;
     private boolean audioRequested;
-    private boolean audioActive;
-    private boolean audioSupported;
 
     @Override
     public void open(CaptureSession session, String streamName, int width, int height, PixelFormat format) throws Exception {
@@ -71,6 +54,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         audioRequested = shouldUseAudio(session, streamName, format);
         tempVideoFile = audioRequested ? session.outputDirectory().resolve(session.name() + "_" + streamName + ".video.tmp.mp4") : outputFile;
         tempAudioFile = audioRequested ? session.audioTempFile() : null;
+        tempAudioMetadataFile = audioRequested ? session.audioMetadataFile() : null;
 
         List<String> command = new ArrayList<>();
         command.add(ffmpeg.toString());
@@ -142,7 +126,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
                 throw new IllegalStateException(message);
             }
         }
-        if (audioRequested && tempAudioFile != null && Files.exists(tempAudioFile) && Files.size(tempAudioFile) > 44L) {
+        if (audioRequested && hasUsableAudioCapture()) {
             try {
                 remuxAudioIntoFinalFile();
             } catch (Exception exception) {
@@ -382,85 +366,11 @@ public final class FfmpegPipeExporter implements FrameExporter {
         }
     }
 
-    private void updateAudioHealth() {
-        if (!audioActive || audioProcess == null) {
-            return;
-        }
-        if (!audioProcess.isAlive()) {
-            audioActive = false;
-            audioSupported = false;
-            session.setAudioStatus(false, true, "Audio capture stopped early; saved video-only output.");
-        }
-    }
-
-    private void startAudioCapture(PerfectFlowConfig config) throws Exception {
-        if (tempAudioFile == null) {
-            throw new IllegalStateException("Audio temp file is unavailable.");
-        }
-        Path ffmpeg = FfmpegLocator.locate(config);
-        String audioInput = resolveDshowAudioInput(config, ffmpeg);
-        List<String> command = new ArrayList<>();
-        command.add(ffmpeg.toString());
-        command.add("-y");
-        command.add("-hide_banner");
-        command.add("-loglevel");
-        command.add(config.ffmpeg.enableLogging ? "info" : "error");
-        command.add("-thread_queue_size");
-        command.add("4096");
-        command.add("-f");
-        command.add("dshow");
-        command.add("-sample_rate");
-        command.add("48000");
-        command.add("-channels");
-        command.add("2");
-        command.add("-i");
-        command.add(audioInput);
-        command.add("-c:a");
-        command.add("pcm_s16le");
-        command.add(tempAudioFile.toString());
-
-        ProcessBuilder builder = new ProcessBuilder(command);
-        builder.directory(session.outputDirectory().toFile());
-        if (config.ffmpeg.enableLogging) {
-            audioLogFile = session.outputDirectory().resolve(session.name() + "_color.audio.ffmpeg.log");
-            builder.redirectErrorStream(true);
-            builder.redirectOutput(audioLogFile.toFile());
-        } else {
-            audioLogFile = null;
-            builder.redirectErrorStream(true);
-            builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-        }
-        audioProcess = builder.start();
-    }
-
-    private void finishAudioCapture() {
-        if (audioProcess == null) {
-            return;
-        }
-        if (audioProcess.isAlive()) {
-            try {
-                OutputStream stdin = audioProcess.getOutputStream();
-                stdin.write('q');
-                stdin.write('\n');
-                stdin.flush();
-                stdin.close();
-            } catch (Exception ignored) {
-                audioProcess.destroy();
-            }
-        }
-        try {
-            audioProcess.waitFor(10, TimeUnit.SECONDS);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
-        if (audioProcess.isAlive()) {
-            audioProcess.destroyForcibly();
-        }
-        audioProcess = null;
-    }
-
     private void remuxAudioIntoFinalFile() throws Exception {
+        SystemAudioMetadata metadata = loadAudioMetadata();
         Path ffmpeg = FfmpegLocator.locate(session.config());
+        double videoDurationSeconds = session.capturedFrames() / (double) Math.max(1, session.scheduler().targetFps());
+        String audioFilter = "aresample=async=1:first_pts=0,apad,atrim=0:" + String.format(Locale.ROOT, "%.6f", videoDurationSeconds);
         List<String> command = new ArrayList<>();
         command.add(ffmpeg.toString());
         command.add("-y");
@@ -469,15 +379,28 @@ public final class FfmpegPipeExporter implements FrameExporter {
         command.add(session.config().ffmpeg.enableLogging ? "info" : "error");
         command.add("-i");
         command.add(tempVideoFile.toString());
+        command.add("-f");
+        command.add(metadata.sampleFormat());
+        command.add("-ar");
+        command.add(Integer.toString(metadata.sampleRate()));
+        command.add("-ac");
+        command.add(Integer.toString(metadata.channels()));
         command.add("-i");
         command.add(tempAudioFile.toString());
+        command.add("-map");
+        command.add("0:v:0");
+        command.add("-map");
+        command.add("1:a:0");
         command.add("-c:v");
         command.add("copy");
         command.add("-c:a");
         command.add("aac");
         command.add("-b:a");
         command.add("192k");
-        command.add("-shortest");
+        command.add("-af");
+        command.add(audioFilter);
+        command.add("-movflags");
+        command.add("+faststart");
         command.add(outputFile.toString());
 
         ProcessBuilder builder = new ProcessBuilder(command);
@@ -512,151 +435,36 @@ public final class FfmpegPipeExporter implements FrameExporter {
             } catch (Exception ignored) {
             }
         }
+        if (tempAudioMetadataFile != null) {
+            try {
+                Files.deleteIfExists(tempAudioMetadataFile);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
-    private String resolveDshowAudioInput(PerfectFlowConfig config, Path ffmpeg) throws Exception {
-        List<AudioDeviceCandidate> devices = listDshowAudioDevices(ffmpeg);
-        if (devices.isEmpty()) {
-            throw new IllegalStateException("No DirectShow audio capture devices were found.");
-        }
-
-        PerfectFlowConfig.Audio audio = config.audio;
-        if (audio != null && audio.deviceSelection == PerfectFlowConfig.AudioDeviceSelection.CUSTOM) {
-            String requested = audio.deviceName == null ? "" : audio.deviceName.trim();
-            if (requested.isBlank()) {
-                throw new IllegalStateException("Custom audio device name is empty.");
-            }
-            for (AudioDeviceCandidate device : devices) {
-                if (device.matches(requested)) {
-                    return requested;
-                }
-            }
-            throw new IllegalStateException("Requested DirectShow audio device was not found: " + requested);
-        }
-
-        for (String hint : AUDIO_OUTPUT_HINTS) {
-            for (AudioDeviceCandidate device : devices) {
-                if (device.matchesHint(hint)) {
-                    return device.primaryName();
-                }
-            }
-        }
-
-        throw new IllegalStateException("No DirectShow output-capture device was found. Install or enable Stereo Mix, Wave Out Mix, Monitor, or a virtual loopback device.");
-    }
-
-    private boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-    }
-
-    private List<AudioDeviceCandidate> listDshowAudioDevices(Path ffmpeg) throws Exception {
-        List<String> command = new ArrayList<>();
-        command.add(ffmpeg.toString());
-        command.add("-hide_banner");
-        command.add("-list_devices");
-        command.add("true");
-        command.add("-f");
-        command.add("dshow");
-        command.add("-i");
-        command.add("dummy");
-
-        ProcessBuilder builder = new ProcessBuilder(command);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        byte[] outputBytes;
-        try (var input = process.getInputStream()) {
-            outputBytes = input.readAllBytes();
-        }
-        try {
-            process.waitFor(10, TimeUnit.SECONDS);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
-        String output = new String(outputBytes, StandardCharsets.UTF_8);
-        return parseDshowAudioDevices(output);
-    }
-
-    private List<AudioDeviceCandidate> parseDshowAudioDevices(String output) {
-        Map<String, AudioDeviceCandidate> devicesByName = new LinkedHashMap<>();
-        AudioDeviceCandidate current = null;
-        for (String rawLine : output.split("\\R")) {
-            String line = rawLine.trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-
-            if (line.contains("(audio)") || line.contains("(video)")) {
-                String quoted = firstQuotedValue(line);
-                if (quoted != null) {
-                    if (line.contains("(audio)")) {
-                        current = devicesByName.computeIfAbsent(quoted, AudioDeviceCandidate::new);
-                    } else {
-                        current = null;
-                    }
-                }
-                continue;
-            }
-
-            if (current != null && line.toLowerCase(Locale.ROOT).contains("alternative name")) {
-                String quoted = firstQuotedValue(line);
-                if (quoted != null) {
-                    current.addAlias(quoted);
-                }
-            }
-        }
-        return new ArrayList<>(devicesByName.values());
-    }
-
-    private String firstQuotedValue(String line) {
-        Matcher matcher = QUOTED_VALUE_PATTERN.matcher(line);
-        return matcher.find() ? matcher.group(1) : null;
-    }
-
-    private static final class AudioDeviceCandidate {
-        private final String primaryName;
-        private final Set<String> aliases = new LinkedHashSet<>();
-
-        private AudioDeviceCandidate(String primaryName) {
-            this.primaryName = primaryName;
-        }
-
-        private String primaryName() {
-            return primaryName;
-        }
-
-        private void addAlias(String alias) {
-            if (alias != null && !alias.isBlank()) {
-                aliases.add(alias);
-            }
-        }
-
-        private boolean matches(String value) {
-            if (value == null || value.isBlank()) {
-                return false;
-            }
-            if (primaryName.equalsIgnoreCase(value)) {
-                return true;
-            }
-            for (String alias : aliases) {
-                if (alias.equalsIgnoreCase(value)) {
-                    return true;
-                }
-            }
+    private boolean hasUsableAudioCapture() throws Exception {
+        if (tempAudioFile == null || tempAudioMetadataFile == null) {
             return false;
         }
-
-        private boolean matchesHint(String hint) {
-            String lowerHint = hint.toLowerCase(Locale.ROOT);
-            if (primaryName.toLowerCase(Locale.ROOT).contains(lowerHint)) {
-                return true;
-            }
-            for (String alias : aliases) {
-                if (alias.toLowerCase(Locale.ROOT).contains(lowerHint)) {
-                    return true;
-                }
-            }
+        if (!Files.exists(tempAudioFile) || !Files.exists(tempAudioMetadataFile)) {
             return false;
         }
+        if (Files.size(tempAudioFile) <= 0L) {
+            return false;
+        }
+        return loadAudioMetadata().totalFrames() > 0L;
+    }
+
+    private SystemAudioMetadata loadAudioMetadata() throws Exception {
+        if (tempAudioMetadataFile == null) {
+            throw new IllegalStateException("Audio metadata file is unavailable.");
+        }
+        Properties properties = new Properties();
+        try (var reader = Files.newBufferedReader(tempAudioMetadataFile, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+        }
+        return SystemAudioMetadata.fromProperties(properties);
     }
 
     private void writeFully(ByteBuffer pixels) throws Exception {

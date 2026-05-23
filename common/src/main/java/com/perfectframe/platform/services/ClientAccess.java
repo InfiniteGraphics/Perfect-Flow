@@ -1,7 +1,7 @@
 package com.perfectframe.platform.services;
 
 import com.perfectframe.capture.frame.CapturedFrame;
-import com.perfectframe.audio.GameAudioCapture;
+import com.perfectframe.audio.SystemAudioCapture;
 import com.perfectframe.shader.CaptureSource;
 
 import java.nio.file.Path;
@@ -16,7 +16,7 @@ public interface ClientAccess {
 
     List<CapturedFrame> captureFrames(com.perfectframe.capture.CaptureSession session, CaptureSource source);
 
-    GameAudioCapture gameAudioCapture();
+    SystemAudioCapture systemAudioCapture();
 
     void postChatMessage(String message);
 
