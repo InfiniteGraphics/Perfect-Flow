@@ -2,6 +2,7 @@ package com.perfectframe.capture.frame;
 
 import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class CapturedFrame {
     private final String streamName;
@@ -11,7 +12,7 @@ public final class CapturedFrame {
     private final PixelFormat format;
     private final ByteBuffer pixels;
     private final Runnable releaseAction;
-    private boolean released;
+    private final AtomicBoolean released = new AtomicBoolean();
 
     public CapturedFrame(String streamName, long frameIndex, int width, int height, PixelFormat format, ByteBuffer pixels) {
         this(streamName, frameIndex, width, height, format, pixels, () -> {
@@ -24,7 +25,7 @@ public final class CapturedFrame {
         this.width = width;
         this.height = height;
         this.format = format;
-        this.pixels = pixels;
+        this.pixels = Objects.requireNonNull(pixels, "pixels");
         this.releaseAction = Objects.requireNonNull(releaseAction, "releaseAction");
     }
 
@@ -53,10 +54,9 @@ public final class CapturedFrame {
     }
 
     public void release() {
-        if (released) {
+        if (!released.compareAndSet(false, true)) {
             return;
         }
-        released = true;
         releaseAction.run();
     }
 }

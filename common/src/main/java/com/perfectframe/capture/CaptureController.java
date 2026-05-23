@@ -5,7 +5,7 @@ import com.perfectframe.capture.export.FfmpegPipeExporter;
 import com.perfectframe.capture.export.FrameExporter;
 import com.perfectframe.capture.export.TgaSequenceExporter;
 import com.perfectframe.capture.frame.CapturedFrame;
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.platform.Services;
 import com.perfectframe.shader.CaptureSource;
 import com.perfectframe.shader.ShaderPipelineAdapter;
@@ -21,14 +21,16 @@ public enum CaptureController {
     INSTANCE;
 
     private final Map<String, FrameExporter> exporters = new LinkedHashMap<>();
-    private PerfectFrameConfig config = new PerfectFrameConfig();
+    private PerfectFlowConfig config = new PerfectFlowConfig();
     private CaptureState state = CaptureState.IDLE;
     private CaptureSession session;
     private ShaderPipelineAdapter shaderAdapter;
     private CaptureSource captureSource;
+    private int captureSourceWidth = -1;
+    private int captureSourceHeight = -1;
     private boolean keyToggleQueued;
 
-    public void configure(PerfectFrameConfig config) {
+    public void configure(PerfectFlowConfig config) {
         this.config = config;
     }
 
@@ -69,10 +71,9 @@ public enum CaptureController {
             Files.createDirectories(outputRoot);
             session = new CaptureSession(config, outputRoot);
             shaderAdapter = ShaderPipelineAdapters.select(config);
-            captureSource = shaderAdapter.resolve();
-            validateCaptureSource(captureSource);
-            if (config.shader.captureMode == PerfectFrameConfig.ShaderCaptureMode.OCULUS
-                    && Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode) == PerfectFrameConfig.ShaderCaptureMode.IRIS) {
+            captureSource = resolveCaptureSource(true);
+            if (config.shader.captureMode == PerfectFlowConfig.ShaderCaptureMode.OCULUS
+                    && Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode) == PerfectFlowConfig.ShaderCaptureMode.IRIS) {
                 notifyClient(Constants.MOD_NAME + ": OCULUS mode maps to IRIS on Fabric 1.20.4.");
             }
             exporters.clear();
@@ -84,7 +85,7 @@ public enum CaptureController {
             notifyClient(Constants.MOD_NAME + " failed to start: " + exception.getMessage());
             closeExporters();
             session = null;
-            captureSource = null;
+            clearCaptureSource();
             state = CaptureState.IDLE;
         }
     }
@@ -100,9 +101,8 @@ public enum CaptureController {
             if (!Services.PLATFORM.clientAccess().isWorldReady()) {
                 return;
             }
-            captureSource = shaderAdapter.resolve();
-            validateCaptureSource(captureSource);
-            List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, captureSource);
+            CaptureSource activeSource = resolveCaptureSource(false);
+            List<CapturedFrame> frames = Services.PLATFORM.clientAccess().captureFrames(session, activeSource);
             for (CapturedFrame frame : frames) {
                 boolean exported = false;
                 try {
@@ -132,13 +132,56 @@ public enum CaptureController {
         long frames = session == null ? 0 : session.capturedFrames();
         closeExporters();
         session = null;
-        captureSource = null;
+        clearCaptureSource();
         state = CaptureState.IDLE;
         notifyClient(Constants.MOD_NAME + " recording stopped (" + frames + " frames).");
     }
 
+    private CaptureSource resolveCaptureSource(boolean forceRefresh) {
+        if (shaderAdapter == null) {
+            throw new IllegalStateException("No capture pipeline is available.");
+        }
+        if (forceRefresh || shouldRefreshCaptureSource()) {
+            CaptureSource resolved = shaderAdapter.resolve();
+            validateCaptureSource(resolved);
+            captureSource = resolved;
+            captureSourceWidth = resolved.width();
+            captureSourceHeight = resolved.height();
+        }
+        return captureSource;
+    }
+
+    private boolean shouldRefreshCaptureSource() {
+        if (captureSource == null) {
+            return true;
+        }
+        if (!hasRequiredStreams(captureSource)) {
+            return true;
+        }
+        int width = captureSource.width();
+        int height = captureSource.height();
+        return width <= 0 || height <= 0 || width != captureSourceWidth || height != captureSourceHeight;
+    }
+
+    private boolean hasRequiredStreams(CaptureSource source) {
+        boolean needsColor = config.capture.recordColor || config.capture.recordAlpha;
+        if (needsColor && !source.hasColor()) {
+            return false;
+        }
+        return !config.capture.recordDepth || source.hasDepth();
+    }
+
+    private void clearCaptureSource() {
+        captureSource = null;
+        captureSourceWidth = -1;
+        captureSourceHeight = -1;
+    }
+
     private void validateCaptureSource(CaptureSource source) {
         boolean needsColor = config.capture.recordColor || config.capture.recordAlpha;
+        if (source == null) {
+            throw new IllegalStateException("Capture source is unavailable.");
+        }
         if (needsColor && !source.hasColor()) {
             throw new IllegalStateException(source.colorUnavailableReason());
         }
@@ -148,6 +191,9 @@ public enum CaptureController {
         if (!needsColor && !config.capture.recordDepth) {
             throw new IllegalStateException("No capture streams are enabled.");
         }
+        if (source.width() <= 0 || source.height() <= 0) {
+            throw new IllegalStateException("Capture source has invalid dimensions.");
+        }
     }
 
     private FrameExporter exporterFor(CapturedFrame frame) throws Exception {
@@ -155,7 +201,7 @@ public enum CaptureController {
         if (existing != null) {
             return existing;
         }
-        FrameExporter created = config.capture.outputMode == PerfectFrameConfig.OutputMode.TGA_SEQUENCE
+        FrameExporter created = config.capture.outputMode == PerfectFlowConfig.OutputMode.TGA_SEQUENCE
                 ? new TgaSequenceExporter()
                 : new FfmpegPipeExporter();
         created.open(session, frame.streamName(), frame.width(), frame.height(), frame.format());
@@ -184,7 +230,7 @@ public enum CaptureController {
             message = exception.getClass().getSimpleName();
         }
 
-        if (config.capture.outputMode == PerfectFrameConfig.OutputMode.FFMPEG_MP4 && session != null) {
+        if (config.capture.outputMode == PerfectFlowConfig.OutputMode.FFMPEG_MP4 && session != null) {
             String lower = message.toLowerCase();
             if (lower.contains("pipe") || lower.contains("ffmpeg exited")) {
                 Path logHintDir = session.outputDirectory();

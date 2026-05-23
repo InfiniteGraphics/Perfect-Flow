@@ -3,7 +3,7 @@ package com.perfectframe.capture.pipeline;
 import com.perfectframe.capture.CaptureSession;
 import com.perfectframe.capture.frame.CapturedFrame;
 import com.perfectframe.capture.frame.PixelFormat;
-import com.perfectframe.config.PerfectFrameConfig;
+import com.perfectframe.config.PerfectFlowConfig;
 import com.perfectframe.shader.CaptureAttachment;
 import com.perfectframe.shader.CaptureSource;
 import org.lwjgl.BufferUtils;
@@ -12,23 +12,25 @@ import org.lwjgl.opengl.GL12;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 public final class RenderCapturePipeline {
-    private ByteBuffer reusableBgrBuffer;
     private ByteBuffer reusableBgraBuffer;
-    private ByteBuffer reusableColorWorkingBgrBuffer;
-    private ByteBuffer reusableMotionBlurOutputBgrBuffer;
-    private ByteBuffer reusableAlphaMaskBgrBuffer;
     private FloatBuffer reusableDepthFloatBuffer;
-    private ByteBuffer reusableDepthBgrBuffer;
-    private final Deque<ByteBuffer> frameBlendHistory = new ArrayDeque<>();
+    private final DirectByteBufferPool framePool = new DirectByteBufferPool();
+    private ByteBuffer[] frameBlendBuffers = new ByteBuffer[0];
+    private int frameBlendBufferWidth = -1;
+    private int frameBlendBufferHeight = -1;
+    private int frameBlendStart;
+    private int frameBlendCount;
 
     public List<CapturedFrame> capture(CaptureSession session, CaptureSource source) {
-        PerfectFrameConfig config = session.config();
+        PerfectFlowConfig config = session.config();
         int width = source.width();
         int height = source.height();
         session.setCaptureSize(width, height);
@@ -37,7 +39,6 @@ public final class RenderCapturePipeline {
         boolean needsColor = config.capture.recordColor || config.capture.recordAlpha;
         if (needsColor) {
             ByteBuffer bgra = null;
-            ByteBuffer colorPixels = null;
             try {
                 if (config.capture.recordAlpha || config.motionBlur.enabled) {
                     bgra = readColor(source.colorAttachment(), width, height, PixelFormat.BGRA32, reusableBgraBuffer);
@@ -45,35 +46,41 @@ public final class RenderCapturePipeline {
                 }
 
                 if (config.capture.recordColor) {
+                    ByteBuffer colorPixels = borrowFrameBuffer(width, height, PixelFormat.BGR24);
                     if (config.motionBlur.enabled) {
-                        colorPixels = applyMotionBlur(config, width, height, bgra);
-                    } else if (bgra != null) {
-                        colorPixels = extractColorBgr(bgra, width, height, obtainReusableColorWorkingBgr(width, height));
+                        applyMotionBlur(config, width, height, bgra, colorPixels);
+                    } else if (bgra == null) {
+                        colorPixels = readColor(source.colorAttachment(), width, height, PixelFormat.BGR24, colorPixels);
                     } else {
-                        colorPixels = readColor(source.colorAttachment(), width, height, PixelFormat.BGR24, reusableBgrBuffer);
-                        reusableBgrBuffer = colorPixels;
+                        extractColorBgr(bgra, width, height, colorPixels);
                     }
-                    frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, PixelFormat.BGR24, copyFrame(colorPixels)));
+                    ByteBuffer colorFrame = colorPixels;
+                    frames.add(new CapturedFrame("color", session.capturedFrames(), width, height, PixelFormat.BGR24, colorFrame,
+                            () -> releaseFrameBuffer(width, height, PixelFormat.BGR24, colorFrame)));
                 } else {
-                    frameBlendHistory.clear();
+                    clearFrameBlendHistory();
                 }
 
                 if (config.capture.recordAlpha) {
-                    ByteBuffer alphaMask = extractAlphaMask(bgra, width, height, obtainReusableAlphaMaskBgr(width, height));
-                    frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.ALPHA_MASK_BGR24, copyFrame(alphaMask)));
+                    ByteBuffer alphaMask = borrowFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24);
+                    extractAlphaMask(bgra, width, height, alphaMask);
+                    frames.add(new CapturedFrame("alpha", session.capturedFrames(), width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask,
+                            () -> releaseFrameBuffer(width, height, PixelFormat.ALPHA_MASK_BGR24, alphaMask)));
                 }
             } finally {
                 if (!config.capture.recordColor) {
-                    frameBlendHistory.clear();
+                    clearFrameBlendHistory();
                 }
             }
         } else {
-            frameBlendHistory.clear();
+            clearFrameBlendHistory();
         }
 
         if (config.capture.recordDepth) {
-            ByteBuffer depthPixels = readDepth(source.depthAttachment(), width, height);
-            frames.add(new CapturedFrame("depth", session.capturedFrames(), width, height, PixelFormat.DEPTH_BGR24, copyFrame(depthPixels)));
+            ByteBuffer depthPixels = borrowFrameBuffer(width, height, PixelFormat.DEPTH_BGR24);
+            readDepth(source.depthAttachment(), width, height, depthPixels);
+            frames.add(new CapturedFrame("depth", session.capturedFrames(), width, height, PixelFormat.DEPTH_BGR24, depthPixels,
+                    () -> releaseFrameBuffer(width, height, PixelFormat.DEPTH_BGR24, depthPixels)));
         }
 
         return frames;
@@ -92,12 +99,11 @@ public final class RenderCapturePipeline {
         return pixels;
     }
 
-    private ByteBuffer readDepth(CaptureAttachment attachment, int width, int height) {
+    private void readDepth(CaptureAttachment attachment, int width, int height, ByteBuffer output) {
         int expectedPixels = width * height;
         reusableDepthFloatBuffer = ensureFloatBuffer(reusableDepthFloatBuffer, expectedPixels);
         reusableDepthFloatBuffer.clear();
-        reusableDepthBgrBuffer = ensureByteBuffer(reusableDepthBgrBuffer, expectedPixels * PixelFormat.DEPTH_BGR24.bytesPerPixel());
-        reusableDepthBgrBuffer.clear();
+        output.clear();
         attachment.bindRead();
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
         GL11.glReadPixels(0, 0, width, height, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, reusableDepthFloatBuffer);
@@ -106,83 +112,107 @@ public final class RenderCapturePipeline {
         while (reusableDepthFloatBuffer.hasRemaining()) {
             float normalized = mapDepth(reusableDepthFloatBuffer.get());
             byte value = (byte) Math.round(normalized * 255.0F);
-            reusableDepthBgrBuffer.put(value);
-            reusableDepthBgrBuffer.put(value);
-            reusableDepthBgrBuffer.put(value);
+            output.put(value);
+            output.put(value);
+            output.put(value);
         }
-        reusableDepthBgrBuffer.flip();
-        return reusableDepthBgrBuffer;
+        output.flip();
     }
 
-    private ByteBuffer applyMotionBlur(PerfectFrameConfig config, int width, int height, ByteBuffer bgra) {
-        return switch (config.motionBlur.mode) {
-            case FRAME_BLEND -> applyFrameBlend(width, height, bgra, config.motionBlur);
-            case ACCUMULATION -> applyAccumulation(width, height, bgra, config.motionBlur);
-        };
+    private void applyMotionBlur(PerfectFlowConfig config, int width, int height, ByteBuffer bgra, ByteBuffer output) {
+        switch (config.motionBlur.mode) {
+            case FRAME_BLEND -> applyFrameBlend(width, height, bgra, config.motionBlur, output);
+            case ACCUMULATION -> applyAccumulation(width, height, bgra, config.motionBlur, output);
+        }
     }
 
-    private ByteBuffer applyFrameBlend(int width, int height, ByteBuffer bgra, PerfectFrameConfig.MotionBlur settings) {
-        ByteBuffer currentBgr = extractColorBgr(bgra, width, height, obtainReusableColorWorkingBgr(width, height));
-        ByteBuffer currentCopy = copyFrame(currentBgr);
-        frameBlendHistory.addLast(currentCopy);
-        while (frameBlendHistory.size() > settings.blendFrameCount) {
-            frameBlendHistory.removeFirst();
-        }
+    private void applyFrameBlend(int width, int height, ByteBuffer bgra, PerfectFlowConfig.MotionBlur settings, ByteBuffer output) {
+        ByteBuffer currentFrame = obtainFrameBlendSlot(width, height, settings.blendFrameCount);
+        extractColorBgr(bgra, width, height, currentFrame);
 
-        ByteBuffer output = obtainReusableMotionBlurOutputBgr(width, height);
         output.clear();
         int pixels = width * height;
         double strength = settings.shutterFraction;
-        int historySize = frameBlendHistory.size();
         for (int i = 0; i < pixels; i++) {
             double totalWeight = 0.0D;
             double blue = 0.0D;
             double green = 0.0D;
             double red = 0.0D;
-            int index = 0;
-            for (ByteBuffer history : frameBlendHistory) {
+            for (int historyIndex = 0; historyIndex < frameBlendCount; historyIndex++) {
+                ByteBuffer history = frameBlendBuffers[(frameBlendStart + historyIndex) % frameBlendBuffers.length];
                 int base = i * 3;
-                double t = historySize <= 1 ? 0.0D : index / (double) (historySize - 1);
-                double weight = 1.0D - strength + (strength * (t + 1.0D / historySize));
+                double t = frameBlendCount <= 1 ? 0.0D : historyIndex / (double) (frameBlendCount - 1);
+                double weight = 1.0D - strength + (strength * (t + 1.0D / frameBlendCount));
                 totalWeight += weight;
                 blue += Byte.toUnsignedInt(history.get(base)) * weight;
                 green += Byte.toUnsignedInt(history.get(base + 1)) * weight;
                 red += Byte.toUnsignedInt(history.get(base + 2)) * weight;
-                index++;
             }
             output.put((byte) Math.round(blue / totalWeight));
             output.put((byte) Math.round(green / totalWeight));
             output.put((byte) Math.round(red / totalWeight));
         }
         output.flip();
-        return output;
     }
 
-    private ByteBuffer applyAccumulation(int width, int height, ByteBuffer bgra, PerfectFrameConfig.MotionBlur settings) {
-        ByteBuffer baseBgr = extractColorBgr(bgra, width, height, obtainReusableColorWorkingBgr(width, height));
-        ByteBuffer output = obtainReusableMotionBlurOutputBgr(width, height);
+    private void applyAccumulation(int width, int height, ByteBuffer bgra, PerfectFlowConfig.MotionBlur settings, ByteBuffer output) {
+        verifyReadableBytes("BGRA color buffer", bgra, width * height * PixelFormat.BGRA32.bytesPerPixel());
         output.clear();
         int pixels = width * height;
         int samples = Math.max(1, settings.sampleCount);
         double shutterWeight = Math.max(0.0D, Math.min(1.0D, settings.shutterFraction));
+        double accumulationFactor = 0.82D + (0.18D * shutterWeight);
         for (int i = 0; i < pixels; i++) {
-            int base = i * 3;
-            int b = Byte.toUnsignedInt(baseBgr.get(base));
-            int g = Byte.toUnsignedInt(baseBgr.get(base + 1));
-            int r = Byte.toUnsignedInt(baseBgr.get(base + 2));
-            double accumulationFactor = 0.82D + (0.18D * shutterWeight);
-            int blue = (int) Math.round((b * accumulationFactor * samples) / samples);
-            int green = (int) Math.round((g * accumulationFactor * samples) / samples);
-            int red = (int) Math.round((r * accumulationFactor * samples) / samples);
+            int base = i * 4;
+            int blue = (int) Math.round((Byte.toUnsignedInt(bgra.get(base)) * accumulationFactor * samples) / samples);
+            int green = (int) Math.round((Byte.toUnsignedInt(bgra.get(base + 1)) * accumulationFactor * samples) / samples);
+            int red = (int) Math.round((Byte.toUnsignedInt(bgra.get(base + 2)) * accumulationFactor * samples) / samples);
             output.put((byte) Math.max(0, Math.min(255, blue)));
             output.put((byte) Math.max(0, Math.min(255, green)));
             output.put((byte) Math.max(0, Math.min(255, red)));
         }
         output.flip();
-        return output;
     }
 
-    private ByteBuffer extractColorBgr(ByteBuffer bgra, int width, int height, ByteBuffer target) {
+    private ByteBuffer obtainFrameBlendSlot(int width, int height, int blendFrameCount) {
+        int capacity = Math.max(1, blendFrameCount);
+        if (frameBlendBuffers.length != capacity || frameBlendBufferWidth != width || frameBlendBufferHeight != height) {
+            frameBlendBuffers = new ByteBuffer[capacity];
+            frameBlendBufferWidth = width;
+            frameBlendBufferHeight = height;
+            frameBlendStart = 0;
+            frameBlendCount = 0;
+        }
+
+        int slotIndex;
+        if (frameBlendCount < frameBlendBuffers.length) {
+            slotIndex = (frameBlendStart + frameBlendCount) % frameBlendBuffers.length;
+            frameBlendCount++;
+        } else {
+            slotIndex = frameBlendStart;
+            frameBlendStart = (frameBlendStart + 1) % frameBlendBuffers.length;
+        }
+
+        ByteBuffer slot = ensureByteBuffer(frameBlendBuffers[slotIndex], width * height * PixelFormat.BGR24.bytesPerPixel());
+        frameBlendBuffers[slotIndex] = slot;
+        slot.clear();
+        return slot;
+    }
+
+    private void clearFrameBlendHistory() {
+        frameBlendStart = 0;
+        frameBlendCount = 0;
+    }
+
+    private ByteBuffer borrowFrameBuffer(int width, int height, PixelFormat format) {
+        return framePool.borrow(width, height, format);
+    }
+
+    private void releaseFrameBuffer(int width, int height, PixelFormat format, ByteBuffer buffer) {
+        framePool.release(width, height, format, buffer);
+    }
+
+    private void extractColorBgr(ByteBuffer bgra, int width, int height, ByteBuffer target) {
         verifyReadableBytes("BGRA color buffer", bgra, width * height * PixelFormat.BGRA32.bytesPerPixel());
         target.clear();
         for (int i = 0; i < width * height; i++) {
@@ -192,10 +222,9 @@ public final class RenderCapturePipeline {
             target.put(bgra.get(base + 2));
         }
         target.flip();
-        return target;
     }
 
-    private ByteBuffer extractAlphaMask(ByteBuffer bgra, int width, int height, ByteBuffer target) {
+    private void extractAlphaMask(ByteBuffer bgra, int width, int height, ByteBuffer target) {
         verifyReadableBytes("BGRA alpha buffer", bgra, width * height * PixelFormat.BGRA32.bytesPerPixel());
         target.clear();
         for (int i = 0; i < width * height; i++) {
@@ -206,7 +235,6 @@ public final class RenderCapturePipeline {
             target.put(value);
         }
         target.flip();
-        return target;
     }
 
     private float mapDepth(float z) {
@@ -217,34 +245,6 @@ public final class RenderCapturePipeline {
         float inverted = 1.0F - clamped;
         float curved = (float) Math.sqrt(inverted);
         return Math.max(0.0F, Math.min(1.0F, curved));
-    }
-
-    private ByteBuffer obtainReusableBgr(int width, int height) {
-        reusableBgrBuffer = ensureByteBuffer(reusableBgrBuffer, width * height * PixelFormat.BGR24.bytesPerPixel());
-        return reusableBgrBuffer;
-    }
-
-    private ByteBuffer obtainReusableColorWorkingBgr(int width, int height) {
-        reusableColorWorkingBgrBuffer = ensureByteBuffer(reusableColorWorkingBgrBuffer, width * height * PixelFormat.BGR24.bytesPerPixel());
-        return reusableColorWorkingBgrBuffer;
-    }
-
-    private ByteBuffer obtainReusableMotionBlurOutputBgr(int width, int height) {
-        reusableMotionBlurOutputBgrBuffer = ensureByteBuffer(reusableMotionBlurOutputBgrBuffer, width * height * PixelFormat.BGR24.bytesPerPixel());
-        return reusableMotionBlurOutputBgrBuffer;
-    }
-
-    private ByteBuffer obtainReusableAlphaMaskBgr(int width, int height) {
-        reusableAlphaMaskBgrBuffer = ensureByteBuffer(reusableAlphaMaskBgrBuffer, width * height * PixelFormat.ALPHA_MASK_BGR24.bytesPerPixel());
-        return reusableAlphaMaskBgrBuffer;
-    }
-
-    private ByteBuffer copyFrame(ByteBuffer source) {
-        ByteBuffer copy = BufferUtils.createByteBuffer(source.remaining());
-        ByteBuffer duplicate = source.duplicate();
-        copy.put(duplicate);
-        copy.flip();
-        return copy;
     }
 
     private static void resetNativeReadBuffer(ByteBuffer buffer, int expectedBytes) {
@@ -278,5 +278,36 @@ public final class RenderCapturePipeline {
             return BufferUtils.createFloatBuffer(capacity);
         }
         return existing;
+    }
+
+    private static final class DirectByteBufferPool {
+        private final Map<BufferKey, ConcurrentLinkedDeque<ByteBuffer>> buffers = new ConcurrentHashMap<>();
+
+        ByteBuffer borrow(int width, int height, PixelFormat format) {
+            BufferKey key = new BufferKey(width, height, format);
+            ConcurrentLinkedDeque<ByteBuffer> queue = buffers.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<>());
+            ByteBuffer buffer = queue.pollFirst();
+            if (buffer == null) {
+                buffer = BufferUtils.createByteBuffer(key.capacityBytes());
+            }
+            buffer.clear();
+            return buffer;
+        }
+
+        void release(int width, int height, PixelFormat format, ByteBuffer buffer) {
+            BufferKey key = new BufferKey(width, height, format);
+            buffer.clear();
+            buffers.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<>()).offerFirst(buffer);
+        }
+    }
+
+    private record BufferKey(int width, int height, PixelFormat format) {
+        private BufferKey {
+            Objects.requireNonNull(format, "format");
+        }
+
+        int capacityBytes() {
+            return width * height * format.bytesPerPixel();
+        }
     }
 }
