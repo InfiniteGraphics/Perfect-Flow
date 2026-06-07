@@ -15,7 +15,6 @@ public final class OculusPipelineAdapter implements ShaderPipelineAdapter {
 
     @Override
     public CaptureSource resolve() {
-        String reason = "Oculus is deferred for a later multi-version Forge integration.";
-        return CaptureSource.unavailable(id(), "oculus", reason, reason);
+        return Services.PLATFORM.oculusCaptureSource();
     }
 }

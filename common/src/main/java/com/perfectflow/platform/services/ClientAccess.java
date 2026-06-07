@@ -21,5 +21,9 @@ public interface ClientAccess {
 
     void postChatMessage(String message);
 
+    default boolean consumeToggleClick() {
+        return false;
+    }
+
     void renderRecordingHud(Object graphicsContext);
 }

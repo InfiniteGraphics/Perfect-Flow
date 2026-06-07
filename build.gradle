@@ -1,6 +1,26 @@
 plugins {
-    // see https://fabricmc.net/develop/ for new versions
     id 'fabric-loom' version '1.11.4' apply false
-    // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
-    id 'net.neoforged.moddev' version '2.0.141' apply false
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)' apply false
+}
+
+def versionPresetFile = file('gradle/minecraft-version-presets.properties')
+def requestedMinecraftVersion = providers.gradleProperty('mcVersion').orElse(providers.gradleProperty('minecraft_version')).get()
+def versionPresetOverrides = new Properties()
+
+if (versionPresetFile.exists()) {
+    def rawPresets = new Properties()
+    versionPresetFile.withInputStream { rawPresets.load(it) }
+    def prefix = "preset.${requestedMinecraftVersion}."
+    rawPresets.stringPropertyNames()
+            .findAll { it.startsWith(prefix) }
+            .sort()
+            .each { key ->
+                versionPresetOverrides.setProperty(key.substring(prefix.length()), rawPresets.getProperty(key))
+            }
+}
+
+gradle.beforeProject { project ->
+    versionPresetOverrides.stringPropertyNames().each { key ->
+        project.extensions.extraProperties.set(key, versionPresetOverrides.getProperty(key))
+    }
 }

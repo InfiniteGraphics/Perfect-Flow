@@ -24,6 +24,10 @@ public interface IPlatformHelper {
         return CaptureSource.unavailable("iris", "iris", "Iris is not available on this loader.", "Iris is not available on this loader.");
     }
 
+    default CaptureSource oculusCaptureSource() {
+        return CaptureSource.unavailable("oculus", "oculus", "Oculus is not available on this loader.", "Oculus is not available on this loader.");
+    }
+
     default MainTargetAccess mainTarget() {
         throw new UnsupportedOperationException("Main render target is not available on this loader.");
     }

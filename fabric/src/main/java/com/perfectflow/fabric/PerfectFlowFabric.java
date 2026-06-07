@@ -1,30 +1,27 @@
 package com.perfectflow.fabric;
 
 import com.perfectflow.CommonClass;
-import com.perfectflow.capture.CaptureClientHooks;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.KeyMapping;
 import org.lwjgl.glfw.GLFW;
 
 public final class PerfectFlowFabric implements ClientModInitializer {
-    private static KeyBinding toggleRecording;
+    private static KeyMapping toggleRecording;
 
     @Override
     public void onInitializeClient() {
         CommonClass.init();
-        toggleRecording = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        toggleRecording = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.perfectflow.toggle_recording",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_U,
                 "key.categories.perfectflow"
         ));
-        HudRenderCallback.EVENT.register((graphics, tickDelta) -> CaptureClientHooks.renderHud(graphics));
     }
 
-    public static KeyBinding toggleRecording() {
+    public static KeyMapping toggleRecording() {
         return toggleRecording;
     }
 }

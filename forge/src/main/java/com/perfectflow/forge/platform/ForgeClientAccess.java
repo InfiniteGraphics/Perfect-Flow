@@ -1,20 +1,20 @@
-package com.perfectflow.fabric.platform;
+package com.perfectflow.forge.platform;
 
-import com.perfectflow.capture.CaptureController;
-import com.perfectflow.capture.CaptureSession;
 import com.perfectflow.audio.SystemAudioCapture;
 import com.perfectflow.audio.WindowsProcessAudioCapture;
+import com.perfectflow.capture.CaptureSession;
 import com.perfectflow.capture.frame.CapturedFrame;
 import com.perfectflow.capture.pipeline.RenderCapturePipeline;
-import com.perfectflow.fabric.PerfectFlowFabric;
+import com.perfectflow.forge.client.PerfectFlowForgeClientBindings;
 import com.perfectflow.platform.services.ClientAccess;
 import com.perfectflow.shader.CaptureSource;
 import com.perfectflow.util.ComponentCompat;
 import net.minecraft.client.Minecraft;
+
 import java.nio.file.Path;
 import java.util.List;
 
-public final class FabricClientAccess implements ClientAccess {
+public final class ForgeClientAccess implements ClientAccess {
     private final RenderCapturePipeline capturePipeline = new RenderCapturePipeline();
     private final SystemAudioCapture systemAudioCapture = WindowsProcessAudioCapture.createOrNoop();
 
@@ -25,14 +25,13 @@ public final class FabricClientAccess implements ClientAccess {
 
     @Override
     public boolean isWorldReady() {
-        Minecraft client = Minecraft.getInstance();
-        return client.level != null && client.player != null;
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.level != null && minecraft.player != null;
     }
 
     @Override
     public boolean isSingleplayerWorld() {
-        Minecraft client = Minecraft.getInstance();
-        return client.getSingleplayerServer() != null;
+        return Minecraft.getInstance().getSingleplayerServer() != null;
     }
 
     @Override
@@ -47,18 +46,18 @@ public final class FabricClientAccess implements ClientAccess {
 
     @Override
     public void postChatMessage(String message) {
-        Minecraft client = Minecraft.getInstance();
-        if (client.gui != null) {
-            client.gui.getChat().addMessage(ComponentCompat.literal(message));
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.gui != null) {
+            minecraft.gui.getChat().addMessage(ComponentCompat.literal(message));
         }
     }
 
     @Override
-    public void renderRecordingHud(Object graphicsContext) {
+    public boolean consumeToggleClick() {
+        return PerfectFlowForgeClientBindings.consumeToggleClick();
     }
 
     @Override
-    public boolean consumeToggleClick() {
-        return PerfectFlowFabric.toggleRecording() != null && PerfectFlowFabric.toggleRecording().consumeClick();
+    public void renderRecordingHud(Object graphicsContext) {
     }
 }

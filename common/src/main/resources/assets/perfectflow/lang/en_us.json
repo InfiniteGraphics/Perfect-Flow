@@ -37,7 +37,7 @@
   "perfectflow.config.tooltip.audio.enable_recording": "On Windows, records only the Minecraft process output through Windows process loopback. Audio failure downgrades to video-only.",
   "perfectflow.config.tooltip.audio.source": "Windows process loopback captures the Minecraft process output without relying on Stereo Mix or virtual cables.",
   "perfectflow.config.tooltip.motion_blur.processing_path": "FFmpeg filter mode only affects MP4 output. Exporter thread mode keeps the current behavior.",
-  "perfectflow.config.tooltip.shader.capture_mode": "IRIS requires Iris with an active shader pack. OCULUS config values are treated as IRIS on Fabric 1.20.4.",
+  "perfectflow.config.tooltip.shader.capture_mode": "IRIS requires Iris with an active shader pack. OCULUS config values are treated as IRIS on Fabric.",
   "perfectflow.config.tooltip.sync.mode": "Normal uses the stronger singleplayer sync path and automatically downgrades to Client Only in multiplayer.",
   "perfectflow.config.enum.resolution_mode.native": "Native",
   "perfectflow.config.enum.resolution_mode.scale": "Scale",

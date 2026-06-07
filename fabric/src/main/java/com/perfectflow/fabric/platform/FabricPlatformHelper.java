@@ -7,7 +7,7 @@ import com.perfectflow.platform.services.IPlatformHelper;
 import com.perfectflow.platform.services.MainTargetAccess;
 import com.perfectflow.shader.CaptureSource;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 import java.nio.file.Path;
 
@@ -50,11 +50,11 @@ public final class FabricPlatformHelper implements IPlatformHelper {
             String reason = "Iris mode requires Iris to be installed.";
             return CaptureSource.unavailable("iris", "iris/missing", reason, reason);
         }
-        return IrisCaptureBridge.resolve(MinecraftClient.getInstance());
+        return IrisCaptureBridge.resolve(Minecraft.getInstance());
     }
 
     @Override
     public MainTargetAccess mainTarget() {
-        return new FabricMainTargetAccess(MinecraftClient.getInstance().getFramebuffer());
+        return new FabricMainTargetAccess(Minecraft.getInstance().getMainRenderTarget());
     }
 }

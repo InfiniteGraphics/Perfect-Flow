@@ -78,7 +78,7 @@ public enum CaptureController {
             captureSource = resolveCaptureSource(true);
             if (config.shader.captureMode == PerfectFlowConfig.ShaderCaptureMode.OCULUS
                     && Services.PLATFORM.normalizeShaderCaptureMode(config.shader.captureMode) == PerfectFlowConfig.ShaderCaptureMode.IRIS) {
-                notifyClient(Constants.MOD_NAME + ": OCULUS mode maps to IRIS on Fabric 1.20.4.");
+                notifyClient(Constants.MOD_NAME + ": OCULUS mode maps to IRIS on Fabric.");
             }
             exporters.clear();
             syncDowngradeNotified = false;
