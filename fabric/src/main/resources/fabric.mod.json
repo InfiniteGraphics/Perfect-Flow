@@ -19,6 +19,9 @@
     "entrypoints": {
         "client": [
           "com.perfectflow.fabric.PerfectFlowFabric"
+        ],
+        "modmenu": [
+          "com.perfectflow.fabric.config.PerfectFlowModMenu"
         ]
     },
     "mixins": [
@@ -29,9 +32,11 @@
         "fabricloader": ">=${fabric_loader_version}",
         "fabric-api": "*",
         "minecraft": "~${minecraft_version}",
-        "java": ">=${java_version}"
+        "java": ">=${java_version}",
+        "cloth-config": ">=${cloth_config_version}"
     },
     "suggests": {
+        "modmenu": ">=${modmenu_version}",
         "iris": "*"
     }
 }

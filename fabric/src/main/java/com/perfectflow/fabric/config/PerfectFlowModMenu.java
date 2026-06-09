@@ -3,12 +3,13 @@ package com.perfectflow.fabric.config;
 import com.perfectflow.CommonClass;
 import com.perfectflow.config.PerfectFlowConfig;
 import com.perfectflow.platform.Services;
+import com.perfectflow.util.ComponentCompat;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 public final class PerfectFlowModMenu implements ModMenuApi {
     @Override
@@ -172,12 +173,12 @@ public final class PerfectFlowModMenu implements ModMenuApi {
         };
     }
 
-    private static Text key(String path) {
-        return Text.translatable("perfectflow.config." + path);
+    private static Component key(String path) {
+        return ComponentCompat.translatable("perfectflow.config." + path);
     }
 
-    private static Text enumKey(String group, String value) {
-        return Text.translatable("perfectflow.config.enum." + group + "." + value);
+    private static Component enumKey(String group, String value) {
+        return ComponentCompat.translatable("perfectflow.config.enum." + group + "." + value);
     }
 
     private enum FabricShaderCaptureMode {

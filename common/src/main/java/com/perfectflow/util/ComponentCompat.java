@@ -32,4 +32,28 @@ public final class ComponentCompat {
 
         throw new IllegalStateException("Unable to create a literal chat component.");
     }
+
+    public static Component translatable(String key) {
+        try {
+            Method method = Component.class.getMethod("translatable", String.class);
+            Object result = method.invoke(null, key);
+            if (result instanceof Component component) {
+                return component;
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+
+        try {
+            Class<?> textComponentClass = Class.forName("net.minecraft.network.chat.TranslatableComponent");
+            Constructor<?> constructor = textComponentClass.getConstructor(String.class, Object[].class);
+            Object result = constructor.newInstance(key, new Object[0]);
+            if (result instanceof Component component) {
+                return component;
+            }
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to create a translatable chat component.", exception);
+        }
+
+        throw new IllegalStateException("Unable to create a translatable chat component.");
+    }
 }
