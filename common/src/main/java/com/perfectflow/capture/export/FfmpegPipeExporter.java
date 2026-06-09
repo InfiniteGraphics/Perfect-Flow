@@ -161,8 +161,8 @@ public final class FfmpegPipeExporter implements FrameExporter {
         int outputWidth = outputWidth(config, width);
         int outputHeight = outputHeight(config, height);
         session.setOutputSize(outputWidth, outputHeight);
-        int effectiveBitrate = effectiveBitrate(config.ffmpeg.videoBitrateKbps, config.ffmpeg.qualityPreset);
-        String bitrate = effectiveBitrate + "k";
+        int bitrateKbps = Math.max(250, config.ffmpeg.videoBitrateKbps);
+        String bitrate = bitrateKbps + "k";
         String filter = buildVideoFilter(config, streamName, outputWidth, outputHeight);
 
         List<String> args = new ArrayList<>();
@@ -192,7 +192,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
         args.add("-maxrate");
         args.add(bitrate);
         args.add("-bufsize");
-        args.add((effectiveBitrate * 2) + "k");
+        args.add((bitrateKbps * 2) + "k");
         args.add("-pix_fmt");
         args.add("yuv420p");
         args.add("-movflags");
@@ -226,14 +226,6 @@ public final class FfmpegPipeExporter implements FrameExporter {
             case SMALL -> "medium";
             case BALANCED -> "veryfast";
             case FAST -> "ultrafast";
-        };
-    }
-
-    private int effectiveBitrate(int configuredBitrate, PerfectFlowConfig.QualityPreset preset) {
-        return switch (preset) {
-            case SMALL -> Math.max(250, configuredBitrate / 2);
-            case BALANCED -> configuredBitrate;
-            case FAST -> Math.max(250, configuredBitrate);
         };
     }
 
@@ -330,7 +322,7 @@ public final class FfmpegPipeExporter implements FrameExporter {
                 throw new IllegalStateException("FFmpeg writer stopped while frames were still queued");
             }
             if (System.nanoTime() >= deadline) {
-                throw new IllegalStateException("FFmpeg could not keep up for " + stallTimeoutMillis + "ms. Lower capture FPS, output resolution, bitrate, or use the FAST quality preset.");
+                throw new IllegalStateException("FFmpeg could not keep up for " + stallTimeoutMillis + "ms. Lower capture FPS, output resolution, or bitrate, or use the FAST preset.");
             }
         }
         session.setExporterQueueStatus(queue.size(), queueCapacity);

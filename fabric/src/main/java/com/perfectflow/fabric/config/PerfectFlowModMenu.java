@@ -130,6 +130,7 @@ public final class PerfectFlowModMenu implements ModMenuApi {
                     .setMin(0.01D)
                     .setMax(1200.0D)
                     .setDefaultValue(1.0D)
+                    .setTooltip(key("tooltip.sync.engine_speed"))
                     .setSaveConsumer(value -> config.sync.engineSpeed = value)
                     .build());
             ConfigCategory ffmpeg = builder.getOrCreateCategory(key("category.ffmpeg"));
@@ -140,12 +141,14 @@ public final class PerfectFlowModMenu implements ModMenuApi {
             ffmpeg.addEntry(entries.startEnumSelector(key("option.ffmpeg.quality_preset"), PerfectFlowConfig.QualityPreset.class, config.ffmpeg.qualityPreset)
                     .setDefaultValue(PerfectFlowConfig.QualityPreset.BALANCED)
                     .setEnumNameProvider(value -> enumKey("quality_preset", value.name().toLowerCase()))
+                    .setTooltip(key("tooltip.ffmpeg.quality_preset"))
                     .setSaveConsumer(value -> config.ffmpeg.qualityPreset = value)
                     .build());
             ffmpeg.addEntry(entries.startIntField(key("option.ffmpeg.video_bitrate_kbps"), config.ffmpeg.videoBitrateKbps)
                     .setMin(250)
                     .setMax(100000)
-                    .setDefaultValue(8000)
+                    .setDefaultValue(24000)
+                    .setTooltip(key("tooltip.ffmpeg.video_bitrate_kbps"))
                     .setSaveConsumer(value -> config.ffmpeg.videoBitrateKbps = value)
                     .build());
             ffmpeg.addEntry(entries.startIntField(key("option.ffmpeg.writer_queue_frames"), config.ffmpeg.writerQueueCapacityFrames)

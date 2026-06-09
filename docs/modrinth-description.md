@@ -1,6 +1,6 @@
 # PerfectFlow
 
-PerfectFlow is a client-side Fabric mod for offline rendering and frame-perfect video capture on Minecraft 1.20.4.
+PerfectFlow is a client-side mod for offline rendering and frame-perfect video capture on Minecraft.
 
 ## Features
 
@@ -13,21 +13,20 @@ PerfectFlow is a client-side Fabric mod for offline rendering and frame-perfect 
 
 ## Required Dependencies
 
-- Fabric API
-- Mod Menu
-- Cloth Config
+- Fabric builds require Fabric API and Cloth Config
+- Fabric builds recommend Mod Menu for easy access to the in-game config screen
+- Forge builds have no required library dependency beyond Forge itself
 
 ## Setup
 
 - Configure the FFmpeg executable path manually before using MP4 export
-- Open the mod configuration through Mod Menu
+- Open the mod configuration through Mod Menu on Fabric
 - Default hotkey: `U`
 
 ## Limitations
 
 - Audio recording currently works only through the Windows process-loopback path
 - Multiplayer capture downgrades sync mode to `Client Only`
-- This public release is Fabric-only for Minecraft 1.20.4
 - Shader compatibility may vary depending on the shader pack
 
 ## Basic Usage

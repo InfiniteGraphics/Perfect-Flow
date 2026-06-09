@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 public enum CaptureController {
     INSTANCE;
@@ -107,6 +108,7 @@ public enum CaptureController {
             state = CaptureState.RECORDING;
             Constants.LOG.info("{} capture source: {}", Constants.MOD_NAME, captureSource.label());
             notifyClient(Constants.MOD_NAME + " recording started (" + captureSource.label() + ").");
+            notifyEngineSpeedStatus();
         } catch (Exception exception) {
             Constants.LOG.error("Failed to start capture", exception);
             notifyClient(Constants.MOD_NAME + " failed to start: " + exception.getMessage());
@@ -181,6 +183,16 @@ public enum CaptureController {
             notifyClient(buildFailureMessage(exception));
             stop();
         }
+    }
+
+    public double recordingTimeScale(boolean singleplayerWorld) {
+        if (state != CaptureState.RECORDING || session == null) {
+            return 1.0D;
+        }
+        if (!singleplayerWorld || session.requestedSyncMode() != PerfectFlowConfig.SyncMode.NORMAL) {
+            return 1.0D;
+        }
+        return session.scheduler().engineSpeed();
     }
 
     public void stop() {
@@ -313,6 +325,22 @@ public enum CaptureController {
 
     private void notifyClient(String message) {
         Services.PLATFORM.clientAccess().postChatMessage(message);
+    }
+
+    private void notifyEngineSpeedStatus() {
+        if (session == null) {
+            return;
+        }
+        double engineSpeed = session.scheduler().engineSpeed();
+        if (Math.abs(engineSpeed - 1.0D) < 0.000_001D) {
+            return;
+        }
+        boolean singleplayerWorld = Services.PLATFORM.clientAccess().isSingleplayerWorld();
+        boolean active = singleplayerWorld && session.requestedSyncMode() == PerfectFlowConfig.SyncMode.NORMAL;
+        String speedText = String.format(Locale.ROOT, "%.2fx", engineSpeed);
+        notifyClient(active
+                ? Constants.MOD_NAME + ": singleplayer speed set to " + speedText + "."
+                : Constants.MOD_NAME + ": singleplayer speed is set to " + speedText + ", but it only applies in singleplayer NORMAL sync.");
     }
 
     private String buildFailureMessage(Exception exception) {

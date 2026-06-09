@@ -1,14 +1,17 @@
 plugins {
     id 'fabric-loom' version '1.11.4' apply false
     id 'net.minecraftforge.gradle' version '[6.0,6.2)' apply false
+    id 'com.modrinth.minotaur' version '2.9.0' apply false
 }
+
+import org.gradle.internal.os.OperatingSystem
 
 def versionPresetFile = file('gradle/minecraft-version-presets.properties')
 def requestedMinecraftVersion = providers.gradleProperty('mcVersion').orElse(providers.gradleProperty('minecraft_version')).get()
 def versionPresetOverrides = new Properties()
+def rawPresets = new Properties()
 
 if (versionPresetFile.exists()) {
-    def rawPresets = new Properties()
     versionPresetFile.withInputStream { rawPresets.load(it) }
     def prefix = "preset.${requestedMinecraftVersion}."
     rawPresets.stringPropertyNames()
@@ -19,8 +22,176 @@ if (versionPresetFile.exists()) {
             }
 }
 
+def supportedMinecraftVersions = rawPresets.stringPropertyNames()
+        .findResults { key ->
+            def matcher = (key =~ /^preset\.(.+)\.minecraft_version$/)
+            matcher.matches() ? matcher.group(1) : null
+        }
+        .unique()
+        .sort(false)
+
+def modrinthProjectIdProvider = providers.gradleProperty('modrinthProjectId')
+        .orElse(providers.environmentVariable('MODRINTH_PROJECT_ID'))
+def modrinthTokenProvider = providers.gradleProperty('modrinth.token')
+        .orElse(providers.environmentVariable('MODRINTH_TOKEN'))
+def modrinthVersionTypeProvider = providers.gradleProperty('modrinthVersionType').orElse('release')
+def modrinthSyncBodyProvider = providers.gradleProperty('modrinthSyncBody').orElse('false')
+def modrinthDebugProvider = providers.gradleProperty('modrinthDebug').orElse('false')
+def modrinthChangelogProvider = providers.gradleProperty('modrinthChangelog')
+def modrinthChangelogFileProvider = providers.gradleProperty('modrinthChangelogFile')
+
+def resolveModrinthText = { String inlineText, String filePath, File fallbackFile, String fallbackText ->
+    if (inlineText) {
+        return inlineText.trim()
+    }
+    if (filePath) {
+        def configuredFile = file(filePath)
+        if (!configuredFile.exists()) {
+            throw new GradleException("Modrinth changelog file does not exist: ${configuredFile}")
+        }
+        return configuredFile.getText('UTF-8').trim()
+    }
+    if (fallbackFile.exists()) {
+        return fallbackFile.getText('UTF-8').trim()
+    }
+    return fallbackText
+}
+
 gradle.beforeProject { project ->
     versionPresetOverrides.stringPropertyNames().each { key ->
         project.extensions.extraProperties.set(key, versionPresetOverrides.getProperty(key))
     }
+}
+
+configure([project(':fabric'), project(':forge')]) {
+    apply plugin: 'com.modrinth.minotaur'
+
+    afterEvaluate {
+        def loaderName = project.name
+        def uploadTaskName = loaderName == 'fabric' ? 'remapJar' : 'jar'
+        def changelogFallbackFile = rootProject.file("docs/changelog/${rootProject.version}.md")
+        def defaultChangelog = "Release ${rootProject.version} for Minecraft ${minecraft_version} (${loaderName.capitalize()})."
+
+        modrinth {
+            token = modrinthTokenProvider.orNull
+            projectId = modrinthProjectIdProvider.orNull ?: 'unset-project-id'
+            versionType = modrinthVersionTypeProvider.get()
+            versionNumber = "${rootProject.version}+${minecraft_version}-${loaderName}"
+            versionName = "${mod_name} ${rootProject.version} for Minecraft ${minecraft_version} (${loaderName.capitalize()})"
+            changelog = resolveModrinthText(
+                    modrinthChangelogProvider.orNull,
+                    modrinthChangelogFileProvider.orNull,
+                    changelogFallbackFile,
+                    defaultChangelog
+            )
+            uploadFile = tasks.named(uploadTaskName).get()
+            gameVersions = [minecraft_version]
+            loaders = [loaderName]
+            debugMode = modrinthDebugProvider.get().toBoolean()
+            syncBodyFrom = rootProject.file('docs/modrinth-description.md').getText('UTF-8')
+
+            dependencies {
+                if (loaderName == 'fabric') {
+                    required.project 'fabric-api'
+                    required.project 'cloth-config'
+                    optional.project 'modmenu'
+                    optional.project 'iris'
+                }
+                if (loaderName == 'forge') {
+                    optional.project 'oculus'
+                }
+            }
+        }
+
+        tasks.named('modrinth') {
+            group = 'publishing'
+            description = "Publishes ${project.path} ${rootProject.version} for Minecraft ${minecraft_version} to Modrinth."
+            doFirst {
+                if (!modrinthTokenProvider.orNull) {
+                    throw new GradleException('Missing Modrinth token. Set MODRINTH_TOKEN or -Pmodrinth.token.')
+                }
+                if (!modrinthProjectIdProvider.orNull) {
+                    throw new GradleException('Missing Modrinth project ID. Set MODRINTH_PROJECT_ID or -PmodrinthProjectId.')
+                }
+            }
+            if (modrinthSyncBodyProvider.get().toBoolean()) {
+                dependsOn tasks.named('modrinthSyncBody')
+            }
+        }
+
+        tasks.named('modrinthSyncBody') {
+            group = 'publishing'
+            description = "Syncs the Modrinth project body from docs/modrinth-description.md using ${project.path}."
+            doFirst {
+                if (!modrinthTokenProvider.orNull) {
+                    throw new GradleException('Missing Modrinth token. Set MODRINTH_TOKEN or -Pmodrinth.token.')
+                }
+                if (!modrinthProjectIdProvider.orNull) {
+                    throw new GradleException('Missing Modrinth project ID. Set MODRINTH_PROJECT_ID or -PmodrinthProjectId.')
+                }
+            }
+        }
+    }
+}
+
+def forwardedModrinthProperties = [
+        'modrinthProjectId',
+        'modrinth.token',
+        'modrinthVersionType',
+        'modrinthSyncBody',
+        'modrinthDebug',
+        'modrinthChangelog',
+        'modrinthChangelogFile'
+]
+
+def forwardedProjectProperties = {
+    def forwarded = [:]
+    forwardedModrinthProperties.each { key ->
+        if (gradle.startParameter.projectProperties.containsKey(key)) {
+            forwarded[key.toString()] = gradle.startParameter.projectProperties.get(key).toString()
+        }
+    }
+    forwarded
+}
+
+def gradleWrapperCommand = OperatingSystem.current().isWindows()
+        ? ['cmd', '/c', 'gradlew.bat']
+        : ['./gradlew']
+
+def gradlePropertyArgs = { String mcVersion ->
+    def args = ["-PmcVersion=${mcVersion}".toString()]
+    forwardedProjectProperties().each { key, value ->
+        args.add("-P${key}=${value}".toString())
+    }
+    args
+}
+
+supportedMinecraftVersions.each { mcVersion ->
+    ['fabric', 'forge'].each { loaderName ->
+        def taskSuffix = "${loaderName.capitalize()}${mcVersion.replace('.', '_')}"
+        tasks.register("publishModrinth${taskSuffix}", Exec) {
+            group = 'publishing'
+            description = "Publishes ${loaderName} for Minecraft ${mcVersion} to Modrinth."
+            workingDir rootDir
+            commandLine(gradleWrapperCommand + [":${loaderName}:modrinth".toString()] + gradlePropertyArgs(mcVersion))
+        }
+    }
+}
+
+tasks.register('publishModrinthFabricAll') {
+    group = 'publishing'
+    description = 'Publishes every configured Fabric build to Modrinth.'
+    dependsOn supportedMinecraftVersions.collect { "publishModrinthFabric${it.replace('.', '_')}" }
+}
+
+tasks.register('publishModrinthForgeAll') {
+    group = 'publishing'
+    description = 'Publishes every configured Forge build to Modrinth.'
+    dependsOn supportedMinecraftVersions.collect { "publishModrinthForge${it.replace('.', '_')}" }
+}
+
+tasks.register('publishModrinthAll') {
+    group = 'publishing'
+    description = 'Publishes every configured Fabric and Forge build to Modrinth.'
+    dependsOn 'publishModrinthFabricAll', 'publishModrinthForgeAll'
 }

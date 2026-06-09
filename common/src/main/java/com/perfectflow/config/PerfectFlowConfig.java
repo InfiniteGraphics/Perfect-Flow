@@ -231,7 +231,7 @@ public class PerfectFlowConfig {
         public FfmpegMode mode = FfmpegMode.CUSTOM_PATH;
         public String customPath = "";
         public QualityPreset qualityPreset = QualityPreset.BALANCED;
-        public int videoBitrateKbps = 8000;
+        public int videoBitrateKbps = 24000;
         public int writerQueueCapacityFrames = 12;
         public int writerStallTimeoutMillis = 30000;
         public String videoArgs = "";

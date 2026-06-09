@@ -21,6 +21,10 @@ public final class FrameScheduler {
         return targetFps;
     }
 
+    public double engineSpeed() {
+        return engineSpeed;
+    }
+
     public long frameIndex() {
         return frameIndex;
     }
