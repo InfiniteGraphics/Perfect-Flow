@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "com.perfectflow.mixin",
   "compatibilityLevel": "JAVA_17",
+  "refmap": "${mod_id}-${project_name}-${minecraft_version}-refmap.json",
   "mixins": [],
   "client": [
     "MixinTimer"
